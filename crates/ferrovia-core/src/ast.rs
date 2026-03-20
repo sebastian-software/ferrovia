@@ -124,6 +124,16 @@ pub enum NodeKind {
     Element(Element),
 }
 
+impl NodeKind {
+    #[must_use]
+    pub fn element_attributes(&self) -> Vec<Attribute> {
+        match self {
+            Self::Element(element) => element.attributes.clone(),
+            _ => Vec::new(),
+        }
+    }
+}
+
 /// XML declaration state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct XmlDecl {

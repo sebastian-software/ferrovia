@@ -14,6 +14,7 @@ const PRESET_DEFAULT: &[&str] = &[
     "cleanupAttrs",
     "removeEmptyText",
     "removeEmptyAttrs",
+    "removeUnusedNS",
     "sortAttrs",
     "sortDefsChildren",
 ];
@@ -37,6 +38,7 @@ pub fn apply_plugins(doc: &mut Document, config: &Config) -> Result<()> {
             "cleanupAttrs" => cleanup_attrs(doc, params.as_ref()),
             "removeEmptyText" => remove_empty_text(doc, params.as_ref()),
             "removeEmptyAttrs" => remove_empty_attrs(doc),
+            "removeUnusedNS" => remove_unused_ns(doc),
             "sortAttrs" => sort_attrs(doc, params.as_ref()),
             "sortDefsChildren" => sort_defs_children(doc),
             "removeTitle" => remove_elements(doc, "title"),
@@ -335,6 +337,50 @@ fn remove_deprecated_attrs(doc: &mut Document, params: Option<&Value>) {
             _ => {}
         }
     }
+}
+
+fn remove_unused_ns(doc: &mut Document) {
+    let Some(root_id) = find_root_svg(doc) else {
+        return;
+    };
+
+    let mut unused = doc
+        .node(root_id)
+        .kind
+        .element_attributes()
+        .into_iter()
+        .filter_map(|attribute| attribute.name.strip_prefix("xmlns:").map(ToOwned::to_owned))
+        .collect::<std::collections::BTreeSet<_>>();
+
+    if unused.is_empty() {
+        return;
+    }
+
+    for (id, node) in doc.nodes.iter().enumerate().skip(1) {
+        let NodeKind::Element(element) = &node.kind else {
+            continue;
+        };
+        if id != root_id
+            && let Some((prefix, _)) = element.name.split_once(':')
+        {
+            unused.remove(prefix);
+        }
+        for attribute in &element.attributes {
+            if let Some((prefix, _)) = attribute.name.split_once(':') {
+                unused.remove(prefix);
+            }
+        }
+    }
+
+    let NodeKind::Element(root) = &mut doc.node_mut(root_id).kind else {
+        return;
+    };
+    root.attributes.retain(|attribute| {
+        attribute
+            .name
+            .strip_prefix("xmlns:")
+            .is_none_or(|prefix| !unused.contains(prefix))
+    });
 }
 
 fn remove_editors_ns_data(doc: &mut Document, params: Option<&Value>) {
