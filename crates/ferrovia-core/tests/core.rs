@@ -94,6 +94,11 @@ fn matches_svgo_oracle_for_cleanup_enable_background() {
     assert_oracle_fixture("cleanup-enable-background");
 }
 
+#[test]
+fn matches_svgo_oracle_for_remove_non_inheritable_group_attrs() {
+    assert_oracle_fixture("remove-non-inheritable-group-attrs");
+}
+
 fn assert_oracle_fixture(name: &str) {
     let root = workspace_root();
     let svg_path = root.join(format!("tests/fixtures/oracle/{name}.svg"));
@@ -287,5 +292,22 @@ fn cleanup_enable_background_keeps_new_for_mask_with_matching_dimensions() {
     assert_eq!(
         result.data,
         r#"<svg xmlns="http://www.w3.org/2000/svg"><filter id="fx"/><mask width="10" height="10" enable-background="new" style="fill:red;enable-background:new"/></svg>"#
+    );
+}
+
+#[test]
+fn remove_non_inheritable_group_attrs_preserves_inheritable_and_group_specific_attrs() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><g clip="rect(0 0 0 0)" fill="red" opacity="0.5"><path d="M0 0"/></g></svg>"#;
+    let config = Config {
+        plugins: vec![PluginSpec::Name(
+            "removeNonInheritableGroupAttrs".to_string(),
+        )],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><g fill="red" opacity="0.5"><path d="M0 0"/></g></svg>"#
     );
 }

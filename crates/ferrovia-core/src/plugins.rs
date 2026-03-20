@@ -15,6 +15,7 @@ const PRESET_DEFAULT: &[&str] = &[
     "removeEditorsNSData",
     "cleanupAttrs",
     "removeUselessDefs",
+    "removeNonInheritableGroupAttrs",
     "cleanupEnableBackground",
     "removeEmptyText",
     "moveElemsAttrsToGroup",
@@ -46,6 +47,7 @@ pub fn apply_plugins(doc: &mut Document, config: &Config) -> Result<()> {
             "removeEditorsNSData" => remove_editors_ns_data(doc, params.as_ref()),
             "cleanupAttrs" => cleanup_attrs(doc, params.as_ref()),
             "removeUselessDefs" => remove_useless_defs(doc),
+            "removeNonInheritableGroupAttrs" => remove_non_inheritable_group_attrs(doc),
             "cleanupEnableBackground" => cleanup_enable_background(doc),
             "removeEmptyText" => remove_empty_text(doc, params.as_ref()),
             "moveElemsAttrsToGroup" => move_elems_attrs_to_group(doc),
@@ -304,6 +306,22 @@ fn cleanup_enable_background_value(
         };
     }
     Some(value.to_string())
+}
+
+fn remove_non_inheritable_group_attrs(doc: &mut Document) {
+    for node in &mut doc.nodes {
+        let NodeKind::Element(element) = &mut node.kind else {
+            continue;
+        };
+        if element.name != "g" {
+            continue;
+        }
+        element.attributes.retain(|attribute| {
+            !is_presentation_attr(attribute.name.as_str())
+                || is_inheritable_attr(attribute.name.as_str())
+                || is_preserved_group_presentation_attr(attribute.name.as_str())
+        });
+    }
 }
 
 fn move_group_attrs_to_elems(doc: &mut Document) {
@@ -1371,6 +1389,89 @@ fn is_inheritable_attr(name: &str) -> bool {
             | "visibility"
             | "word-spacing"
             | "writing-mode"
+    )
+}
+
+fn is_presentation_attr(name: &str) -> bool {
+    matches!(
+        name,
+        "alignment-baseline"
+            | "baseline-shift"
+            | "clip-path"
+            | "clip-rule"
+            | "clip"
+            | "color-interpolation-filters"
+            | "color-interpolation"
+            | "color-profile"
+            | "color-rendering"
+            | "color"
+            | "cursor"
+            | "direction"
+            | "display"
+            | "dominant-baseline"
+            | "enable-background"
+            | "fill-opacity"
+            | "fill-rule"
+            | "fill"
+            | "filter"
+            | "flood-color"
+            | "flood-opacity"
+            | "font-family"
+            | "font-size-adjust"
+            | "font-size"
+            | "font-stretch"
+            | "font-style"
+            | "font-variant"
+            | "font-weight"
+            | "glyph-orientation-horizontal"
+            | "glyph-orientation-vertical"
+            | "image-rendering"
+            | "letter-spacing"
+            | "lighting-color"
+            | "marker-end"
+            | "marker-mid"
+            | "marker-start"
+            | "mask"
+            | "opacity"
+            | "overflow"
+            | "paint-order"
+            | "pointer-events"
+            | "shape-rendering"
+            | "stop-color"
+            | "stop-opacity"
+            | "stroke-dasharray"
+            | "stroke-dashoffset"
+            | "stroke-linecap"
+            | "stroke-linejoin"
+            | "stroke-miterlimit"
+            | "stroke-opacity"
+            | "stroke-width"
+            | "stroke"
+            | "text-anchor"
+            | "text-decoration"
+            | "text-overflow"
+            | "text-rendering"
+            | "transform-origin"
+            | "transform"
+            | "unicode-bidi"
+            | "vector-effect"
+            | "visibility"
+            | "word-spacing"
+            | "writing-mode"
+    )
+}
+
+fn is_preserved_group_presentation_attr(name: &str) -> bool {
+    matches!(
+        name,
+        "clip-path"
+            | "display"
+            | "filter"
+            | "mask"
+            | "opacity"
+            | "text-decoration"
+            | "transform"
+            | "unicode-bidi"
     )
 }
 
