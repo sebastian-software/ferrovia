@@ -2,12 +2,13 @@
   "name": "ferrovia-workspace",
   "private": true,
   "description": "Workspace for ferrovia, a SVGO-compatible SVG optimizer written in Rust",
-  "author": "Sebastian Werner <s.werner@sebastian-software.de>",
+  "author": "Sebastian Software GmbH, Mainz, Germany",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/sebastian-software/ferrovia.git"
   },
+  "homepage": "https://oss.sebastian-software.com",
   "type": "module",
   "packageManager": "pnpm@9.15.9",
   "scripts": {

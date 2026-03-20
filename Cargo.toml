@@ -11,7 +11,7 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/sebastian-software/ferrovia"
-authors = ["Sebastian Werner <s.werner@sebastian-software.de>"]
+authors = ["Sebastian Software GmbH, Mainz, Germany"]
 
 [workspace.dependencies]
 memchr = "2.7.4"

@@ -2,6 +2,8 @@
 
 `ferrovia` is a SVGO-compatible SVG optimizer written in Rust.
 
+Project homepage: [oss.sebastian-software.com](https://oss.sebastian-software.com)
+
 The current focus is byte-level behavioral parity with `svgo@4.0.1`, verified through differential tests and vendored fixture coverage. The project contains:
 
 - `ferrovia-core`: the Rust optimizer library
