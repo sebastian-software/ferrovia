@@ -1,7 +1,7 @@
 import { readdirSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const require = createRequire(import.meta.url);
@@ -17,19 +17,48 @@ function loadNativeBinding() {
   return require(join(packageDir, bindingName));
 }
 
-export async function loadConfig(configPath) {
-  if (!configPath) {
-    return null;
+async function importConfig(configPath) {
+  const module = await import(pathToFileURL(configPath).href);
+  const config = Object.prototype.hasOwnProperty.call(module, "default")
+    ? module.default
+    : module;
+  if (config == null || typeof config !== "object" || Array.isArray(config)) {
+    throw new Error(`Invalid config file "${configPath}"`);
   }
-  if (configPath.endsWith(".mjs")) {
-    const module = await import(
-      configPath.startsWith(".")
-        ? pathToFileURL(join(process.cwd(), configPath)).href
-        : configPath,
-    );
-    return module.default ?? module;
+  return config;
+}
+
+async function isFile(path) {
+  try {
+    return (await stat(path)).isFile();
+  } catch {
+    return false;
   }
-  return JSON.parse(await readFile(configPath, "utf8"));
+}
+
+export async function loadConfig(configPath = null, cwd = process.cwd()) {
+  if (configPath != null) {
+    const resolved = isAbsolute(configPath) ? configPath : join(cwd, configPath);
+    if (resolved.endsWith(".json")) {
+      return JSON.parse(await readFile(resolved, "utf8"));
+    }
+    return importConfig(resolved);
+  }
+
+  let dir = cwd;
+  while (true) {
+    for (const name of ["svgo.config.js", "svgo.config.mjs", "svgo.config.cjs"]) {
+      const candidate = join(dir, name);
+      if (await isFile(candidate)) {
+        return importConfig(candidate);
+      }
+    }
+    const parent = dirname(dir);
+    if (parent === dir) {
+      return null;
+    }
+    dir = parent;
+  }
 }
 
 export async function optimize(svg, config = {}) {
