@@ -11,6 +11,11 @@ pub struct OptimizeResult {
 }
 
 /// Optimize an SVG string with the supplied config.
+///
+/// # Errors
+///
+/// Returns an error when the input cannot be parsed or when the config references
+/// a plugin that is not implemented by the current ferrovia build.
 pub fn optimize(svg: &str, config: &Config) -> Result<OptimizeResult> {
     let mut current = svg.to_string();
     let passes = if config.multipass { 10 } else { 1 };

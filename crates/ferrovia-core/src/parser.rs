@@ -3,6 +3,12 @@ use memchr::memchr;
 use crate::ast::{Attribute, Document, Element, NodeId, NodeKind, QuoteStyle, XmlDecl};
 use crate::error::{FerroviaError, Result};
 
+/// Parse an SVG/XML string into the arena-backed document model.
+///
+/// # Errors
+///
+/// Returns an error if the input contains malformed tags, unterminated literals,
+/// or mismatched closing tags.
 pub fn parse(svg: &str) -> Result<Document> {
     let parser = Parser::new(svg);
     parser.parse()
@@ -197,7 +203,7 @@ impl<'a> Parser<'a> {
         self.position += 1;
         let start = self.position;
         while let Some(byte) = self.current_byte() {
-            if byte == self.quote_byte(quote) {
+            if byte == Self::quote_byte(quote) {
                 let value = self.input[start..self.position].to_string();
                 self.position += 1;
                 return Ok(Attribute { name, value, quote });
@@ -271,7 +277,7 @@ impl<'a> Parser<'a> {
         memchr(byte, &self.bytes[self.position..]).map(|offset| self.position + offset)
     }
 
-    fn quote_byte(&self, quote: QuoteStyle) -> u8 {
+    const fn quote_byte(quote: QuoteStyle) -> u8 {
         match quote {
             QuoteStyle::Double => b'"',
             QuoteStyle::Single => b'\'',

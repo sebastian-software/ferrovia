@@ -11,8 +11,13 @@ const PRESET_DEFAULT: &[&str] = &[
     "removeMetadata",
 ];
 
+/// Apply the configured plugin pipeline to an already parsed document.
+///
+/// # Errors
+///
+/// Returns an error when the config references a plugin that is not implemented.
 pub fn apply_plugins(doc: &mut Document, config: &Config) -> Result<()> {
-    for plugin in expand_plugins(config)? {
+    for plugin in expand_plugins(config) {
         let name = plugin.name().to_string();
         let params = plugin.params().cloned();
         match name.as_str() {
@@ -30,7 +35,7 @@ pub fn apply_plugins(doc: &mut Document, config: &Config) -> Result<()> {
     Ok(())
 }
 
-fn expand_plugins(config: &Config) -> Result<Vec<PluginSpec>> {
+fn expand_plugins(config: &Config) -> Vec<PluginSpec> {
     let mut expanded = Vec::new();
     for plugin in &config.plugins {
         if !plugin.enabled() {
@@ -51,7 +56,7 @@ fn expand_plugins(config: &Config) -> Result<Vec<PluginSpec>> {
                                 name: (*name).to_string(),
                                 params: Some(Value::Object(object.clone())),
                                 enabled: true,
-                            }))
+                            }));
                         }
                         _ => expanded.push(PluginSpec::Name((*name).to_string())),
                     }
@@ -67,7 +72,7 @@ fn expand_plugins(config: &Config) -> Result<Vec<PluginSpec>> {
             expanded.push(plugin.clone());
         }
     }
-    Ok(expanded)
+    expanded
 }
 
 fn remove_comments(doc: &mut Document, params: Option<&Value>) {
@@ -190,11 +195,11 @@ fn find_root_svg(doc: &Document) -> Option<usize> {
     })
 }
 
-fn matches_doctype(kind: &NodeKind) -> bool {
+const fn matches_doctype(kind: &NodeKind) -> bool {
     matches!(kind, NodeKind::Doctype(_))
 }
 
-fn matches_xml_decl(kind: &NodeKind) -> bool {
+const fn matches_xml_decl(kind: &NodeKind) -> bool {
     matches!(kind, NodeKind::XmlDecl(_))
 }
 

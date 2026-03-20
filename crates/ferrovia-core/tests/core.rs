@@ -88,7 +88,7 @@ fn assert_oracle_fixture(name: &str) {
         .output()
         .expect("run oracle");
 
-    assert!(expected.status.success(), "oracle failed: {:?}", expected);
+    assert!(expected.status.success(), "oracle failed: {expected:?}");
 
     let config =
         serde_json::from_str::<Config>(&std::fs::read_to_string(config_path).expect("config"))
@@ -120,5 +120,5 @@ fn preset_default_honors_boolean_overrides() {
     };
 
     let result = optimize(svg, &config).expect("optimize");
-    assert_eq!(result.data, r#"<svg><!--keep me--></svg>"#);
+    assert_eq!(result.data, r"<svg><!--keep me--></svg>");
 }

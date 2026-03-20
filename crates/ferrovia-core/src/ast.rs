@@ -2,7 +2,7 @@
 pub type NodeId = usize;
 
 /// Arena-backed SVG document.
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Document {
     pub nodes: Vec<Node>,
 }
@@ -16,7 +16,7 @@ impl Document {
     }
 
     #[must_use]
-    pub fn root_id(&self) -> NodeId {
+    pub const fn root_id(&self) -> NodeId {
         0
     }
 
@@ -71,7 +71,7 @@ impl Iterator for Children<'_> {
 }
 
 /// Arena node.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Node {
     pub kind: NodeKind,
     pub parent: Option<NodeId>,
@@ -81,11 +81,11 @@ pub struct Node {
 }
 
 impl Node {
-    fn document() -> Self {
+    const fn document() -> Self {
         Self::new(NodeKind::Document)
     }
 
-    fn new(kind: NodeKind) -> Self {
+    const fn new(kind: NodeKind) -> Self {
         Self {
             kind,
             parent: None,
@@ -97,7 +97,7 @@ impl Node {
 }
 
 /// Node payloads supported by the parser/serializer.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NodeKind {
     Document,
     XmlDecl(XmlDecl),

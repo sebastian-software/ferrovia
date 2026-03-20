@@ -45,7 +45,7 @@ impl PluginSpec {
     }
 
     #[must_use]
-    pub fn params(&self) -> Option<&Value> {
+    pub const fn params(&self) -> Option<&Value> {
         match self {
             Self::Name(_) => None,
             Self::Configured(config) => config.params.as_ref(),
@@ -53,7 +53,7 @@ impl PluginSpec {
     }
 
     #[must_use]
-    pub fn enabled(&self) -> bool {
+    pub const fn enabled(&self) -> bool {
         match self {
             Self::Name(_) => true,
             Self::Configured(config) => config.enabled,
@@ -62,6 +62,7 @@ impl PluginSpec {
 }
 
 /// Structured plugin config object.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PluginConfig {

@@ -13,6 +13,12 @@ pub struct OptimizeResponse {
 }
 
 #[napi]
+#[allow(clippy::needless_pass_by_value)]
+/// Optimize an SVG string through the shared Rust core.
+///
+/// # Errors
+///
+/// Returns an error if the config JSON cannot be parsed or if optimization fails.
 pub fn optimize(svg: String, options: Option<OptimizeOptions>) -> Result<OptimizeResponse> {
     let config = match options.and_then(|options| options.config_json) {
         Some(raw) => serde_json::from_str::<Config>(&raw)

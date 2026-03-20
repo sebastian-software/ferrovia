@@ -1,6 +1,7 @@
 use crate::ast::{Attribute, Document, NodeId, NodeKind, QuoteStyle};
 use crate::config::Js2Svg;
 
+#[must_use]
 pub fn serialize(doc: &Document, options: &Js2Svg) -> String {
     let mut out = String::new();
     for child in doc.children(doc.root_id()) {
