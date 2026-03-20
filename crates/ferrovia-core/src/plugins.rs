@@ -12,6 +12,7 @@ const PRESET_DEFAULT: &[&str] = &[
     "removeMetadata",
     "removeEditorsNSData",
     "cleanupAttrs",
+    "removeUselessDefs",
     "removeEmptyText",
     "removeEmptyAttrs",
     "removeUnusedNS",
@@ -36,6 +37,7 @@ pub fn apply_plugins(doc: &mut Document, config: &Config) -> Result<()> {
             "removeMetadata" => remove_elements(doc, "metadata"),
             "removeEditorsNSData" => remove_editors_ns_data(doc, params.as_ref()),
             "cleanupAttrs" => cleanup_attrs(doc, params.as_ref()),
+            "removeUselessDefs" => remove_useless_defs(doc),
             "removeEmptyText" => remove_empty_text(doc, params.as_ref()),
             "removeEmptyAttrs" => remove_empty_attrs(doc),
             "removeUnusedNS" => remove_unused_ns(doc),
@@ -136,6 +138,53 @@ fn cleanup_attrs(doc: &mut Document, params: Option<&Value>) {
                 attribute.value = collapse_repeating_spaces(&attribute.value);
             }
         }
+    }
+}
+
+fn remove_useless_defs(doc: &mut Document) {
+    let target_ids: Vec<_> = doc
+        .nodes
+        .iter()
+        .enumerate()
+        .filter_map(|(id, node)| match &node.kind {
+            NodeKind::Element(element)
+                if element.name == "defs"
+                    || (is_non_rendering(element.name.as_str())
+                        && !element
+                            .attributes
+                            .iter()
+                            .any(|attribute| attribute.name == "id")) =>
+            {
+                Some(id)
+            }
+            _ => None,
+        })
+        .collect();
+
+    for target_id in target_ids {
+        let parent_id = doc.node(target_id).parent;
+        let mut useful_children = Vec::new();
+        collect_useful_children(doc, target_id, &mut useful_children);
+
+        if useful_children.is_empty() {
+            detach_node(doc, target_id);
+            continue;
+        }
+
+        let direct_children: Vec<_> = doc.children(target_id).collect();
+        for child_id in &useful_children {
+            if doc.node(*child_id).parent != Some(target_id) {
+                detach_node(doc, *child_id);
+            }
+        }
+        for child_id in direct_children {
+            if !useful_children.contains(&child_id) {
+                detach_node(doc, child_id);
+            }
+        }
+
+        doc.reorder_children(target_id, &useful_children);
+        doc.node_mut(target_id).parent = parent_id;
     }
 }
 
@@ -545,6 +594,39 @@ fn collapse_attribute_newlines(value: &str) -> String {
         index += 1;
     }
     out
+}
+
+fn collect_useful_children(doc: &Document, node_id: usize, useful_children: &mut Vec<usize>) {
+    for child_id in doc.children(node_id) {
+        let NodeKind::Element(element) = &doc.node(child_id).kind else {
+            continue;
+        };
+        if element
+            .attributes
+            .iter()
+            .any(|attribute| attribute.name == "id")
+            || element.name == "style"
+        {
+            useful_children.push(child_id);
+        } else {
+            collect_useful_children(doc, child_id, useful_children);
+        }
+    }
+}
+
+fn is_non_rendering(name: &str) -> bool {
+    matches!(
+        name,
+        "clipPath"
+            | "filter"
+            | "linearGradient"
+            | "marker"
+            | "mask"
+            | "pattern"
+            | "radialGradient"
+            | "solidColor"
+            | "symbol"
+    )
 }
 
 fn collapse_repeating_spaces(value: &str) -> String {
