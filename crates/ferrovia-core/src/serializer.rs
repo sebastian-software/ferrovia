@@ -64,9 +64,25 @@ fn serialize_node(doc: &Document, id: NodeId, out: &mut String, options: &Js2Svg
                 serialize_attribute(attribute, out);
             }
 
-            let has_children = doc.node(id).first_child.is_some();
-            if element.self_closing && !has_children {
+            let children: Vec<_> = doc.children(id).collect();
+            let has_children = !children.is_empty();
+            if !has_children {
                 out.push_str("/>");
+                newline(out, options);
+                return;
+            }
+
+            if options.pretty
+                && children.len() == 1
+                && let NodeKind::Text(text) = &doc.node(children[0]).kind
+                && !text.is_empty()
+                && text.trim() == text
+            {
+                out.push('>');
+                out.push_str(text);
+                out.push_str("</");
+                out.push_str(&element.name);
+                out.push('>');
                 newline(out, options);
                 return;
             }
@@ -75,7 +91,7 @@ fn serialize_node(doc: &Document, id: NodeId, out: &mut String, options: &Js2Svg
             if options.pretty && has_children {
                 newline(out, options);
             }
-            for child in doc.children(id) {
+            for child in children {
                 serialize_node(doc, child, out, options, depth + 1);
             }
             if options.pretty && has_children {

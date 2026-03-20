@@ -8,7 +8,12 @@ const PRESET_DEFAULT: &[&str] = &[
     "removeDoctype",
     "removeXMLProcInst",
     "removeComments",
+    "removeDeprecatedAttrs",
     "removeMetadata",
+    "removeEditorsNSData",
+    "cleanupAttrs",
+    "removeEmptyText",
+    "removeEmptyAttrs",
 ];
 
 /// Apply the configured plugin pipeline to an already parsed document.
@@ -24,7 +29,12 @@ pub fn apply_plugins(doc: &mut Document, config: &Config) -> Result<()> {
             "removeDoctype" => remove_by(doc, matches_doctype),
             "removeXMLProcInst" => remove_by(doc, matches_xml_decl),
             "removeComments" => remove_comments(doc, params.as_ref()),
+            "removeDeprecatedAttrs" => remove_deprecated_attrs(doc, params.as_ref()),
             "removeMetadata" => remove_elements(doc, "metadata"),
+            "removeEditorsNSData" => remove_editors_ns_data(doc, params.as_ref()),
+            "cleanupAttrs" => cleanup_attrs(doc, params.as_ref()),
+            "removeEmptyText" => remove_empty_text(doc, params.as_ref()),
+            "removeEmptyAttrs" => remove_empty_attrs(doc),
             "removeTitle" => remove_elements(doc, "title"),
             "removeDesc" => remove_desc(doc, params.as_ref()),
             "removeDimensions" => remove_dimensions(doc),
@@ -91,6 +101,38 @@ fn remove_comments(doc: &mut Document, params: Option<&Value>) {
     );
 }
 
+fn cleanup_attrs(doc: &mut Document, params: Option<&Value>) {
+    let newlines = params
+        .and_then(|value| value.get("newlines"))
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let trim = params
+        .and_then(|value| value.get("trim"))
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let spaces = params
+        .and_then(|value| value.get("spaces"))
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+
+    for node in &mut doc.nodes {
+        let NodeKind::Element(element) = &mut node.kind else {
+            continue;
+        };
+        for attribute in &mut element.attributes {
+            if newlines {
+                attribute.value = collapse_attribute_newlines(&attribute.value);
+            }
+            if trim {
+                attribute.value = attribute.value.trim().to_string();
+            }
+            if spaces {
+                attribute.value = collapse_repeating_spaces(&attribute.value);
+            }
+        }
+    }
+}
+
 fn remove_elements(doc: &mut Document, name: &str) {
     remove_by(
         doc,
@@ -129,11 +171,10 @@ fn desc_is_removable(doc: &Document, id: usize) -> bool {
             _ => return false,
         }
     }
-    let normalized = text.trim();
+    let normalized = text.trim_start();
     normalized.is_empty()
-        || normalized.contains("Created with")
-        || normalized.contains("Created using")
-        || normalized.contains("Generator:")
+        || normalized.starts_with("Created with")
+        || normalized.starts_with("Created using")
 }
 
 fn remove_dimensions(doc: &mut Document) {
@@ -174,6 +215,175 @@ fn remove_dimensions(doc: &mut Document) {
     }
 }
 
+fn remove_deprecated_attrs(doc: &mut Document, params: Option<&Value>) {
+    let remove_unsafe = params
+        .and_then(|value| value.get("removeUnsafe"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+
+    for node in &mut doc.nodes {
+        let NodeKind::Element(element) = &mut node.kind else {
+            continue;
+        };
+        match element.name.as_str() {
+            "svg" => {
+                element.attributes.retain(|attribute| {
+                    if attribute.name == "version" {
+                        return false;
+                    }
+                    if remove_unsafe && attribute.name == "enable-background" {
+                        return false;
+                    }
+                    true
+                });
+            }
+            "view" => {
+                if remove_unsafe {
+                    element
+                        .attributes
+                        .retain(|attribute| attribute.name != "viewTarget");
+                }
+            }
+            "text" => {
+                let has_lang = element
+                    .attributes
+                    .iter()
+                    .any(|attribute| attribute.name == "lang");
+                element.attributes.retain(|attribute| {
+                    if attribute.name == "xml:lang" {
+                        return !(has_lang || remove_unsafe);
+                    }
+                    true
+                });
+            }
+            _ => {}
+        }
+    }
+}
+
+fn remove_editors_ns_data(doc: &mut Document, params: Option<&Value>) {
+    let mut namespaces = editor_namespaces();
+    if let Some(additional) = params
+        .and_then(|value| value.get("additionalNamespaces"))
+        .and_then(Value::as_array)
+    {
+        namespaces.extend(
+            additional
+                .iter()
+                .filter_map(Value::as_str)
+                .map(ToOwned::to_owned),
+        );
+    }
+
+    let Some(root_id) = find_root_svg(doc) else {
+        return;
+    };
+    let NodeKind::Element(root) = &mut doc.node_mut(root_id).kind else {
+        return;
+    };
+
+    let mut prefixes = Vec::new();
+    root.attributes.retain(|attribute| {
+        if let Some(prefix) = attribute.name.strip_prefix("xmlns:")
+            && namespaces
+                .iter()
+                .any(|namespace| namespace == &attribute.value)
+        {
+            prefixes.push(prefix.to_string());
+            return false;
+        }
+        true
+    });
+
+    if prefixes.is_empty() {
+        return;
+    }
+
+    let mut remove_nodes = Vec::new();
+    for (id, node) in doc.nodes.iter_mut().enumerate().skip(1) {
+        let NodeKind::Element(element) = &mut node.kind else {
+            continue;
+        };
+        element.attributes.retain(|attribute| {
+            attribute
+                .name
+                .split_once(':')
+                .is_none_or(|(prefix, _)| !prefixes.iter().any(|candidate| candidate == prefix))
+        });
+
+        if element
+            .name
+            .split_once(':')
+            .is_some_and(|(prefix, _)| prefixes.iter().any(|candidate| candidate == prefix))
+        {
+            remove_nodes.push(id);
+        }
+    }
+
+    for id in remove_nodes {
+        detach_node(doc, id);
+    }
+}
+
+fn remove_empty_attrs(doc: &mut Document) {
+    for node in &mut doc.nodes {
+        let NodeKind::Element(element) = &mut node.kind else {
+            continue;
+        };
+        element.attributes.retain(|attribute| {
+            if attribute.value.is_empty() {
+                matches!(
+                    attribute.name.as_str(),
+                    "requiredFeatures" | "requiredExtensions" | "systemLanguage"
+                )
+            } else {
+                true
+            }
+        });
+    }
+}
+
+fn remove_empty_text(doc: &mut Document, params: Option<&Value>) {
+    let remove_text = params
+        .and_then(|value| value.get("text"))
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let remove_tspan = params
+        .and_then(|value| value.get("tspan"))
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let remove_tref = params
+        .and_then(|value| value.get("tref"))
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+
+    let mut ids = Vec::new();
+    for (id, node) in doc.nodes.iter().enumerate().skip(1) {
+        let NodeKind::Element(element) = &node.kind else {
+            continue;
+        };
+        let has_children = doc.node(id).first_child.is_some();
+        let should_remove = match element.name.as_str() {
+            "text" => remove_text && !has_children,
+            "tspan" => remove_tspan && !has_children,
+            "tref" => {
+                remove_tref
+                    && !element
+                        .attributes
+                        .iter()
+                        .any(|attr| attr.name == "xlink:href")
+            }
+            _ => false,
+        };
+        if should_remove {
+            ids.push(id);
+        }
+    }
+    for id in ids {
+        detach_node(doc, id);
+    }
+}
+
 fn remove_xmlns(doc: &mut Document) {
     let Some(root_id) = find_root_svg(doc) else {
         return;
@@ -184,6 +394,81 @@ fn remove_xmlns(doc: &mut Document) {
     element
         .attributes
         .retain(|attribute| attribute.name.as_str() != "xmlns");
+}
+
+fn collapse_attribute_newlines(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut out = String::with_capacity(value.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'\r' || bytes[index] == b'\n' {
+            let prev = out.chars().next_back();
+            if bytes[index] == b'\r' && bytes.get(index + 1) == Some(&b'\n') {
+                index += 1;
+            }
+            let mut next_index = index + 1;
+            while matches!(bytes.get(next_index), Some(b'\r' | b'\n')) {
+                next_index += 1;
+            }
+            let next = bytes.get(next_index).copied();
+            if prev.is_some_and(|char| !char.is_whitespace())
+                && next.is_some_and(|byte| !char::from(byte).is_whitespace())
+            {
+                out.push(' ');
+            }
+            index = next_index;
+            continue;
+        }
+        out.push(char::from(bytes[index]));
+        index += 1;
+    }
+    out
+}
+
+fn collapse_repeating_spaces(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    let mut previous_space = false;
+    for char in value.chars() {
+        if char == ' ' {
+            if !previous_space {
+                out.push(char);
+            }
+            previous_space = true;
+        } else {
+            out.push(char);
+            previous_space = false;
+        }
+    }
+    out
+}
+
+fn editor_namespaces() -> Vec<String> {
+    vec![
+        "http://creativecommons.org/ns#".to_string(),
+        "http://inkscape.sourceforge.net/DTD/sodipodi-0.dtd".to_string(),
+        "http://krita.org/namespaces/svg/krita".to_string(),
+        "http://ns.adobe.com/AdobeIllustrator/10.0/".to_string(),
+        "http://ns.adobe.com/AdobeSVGViewerExtensions/3.0/".to_string(),
+        "http://ns.adobe.com/Extensibility/1.0/".to_string(),
+        "http://ns.adobe.com/Flows/1.0/".to_string(),
+        "http://ns.adobe.com/GenericCustomNamespace/1.0/".to_string(),
+        "http://ns.adobe.com/Graphs/1.0/".to_string(),
+        "http://ns.adobe.com/ImageReplacement/1.0/".to_string(),
+        "http://ns.adobe.com/SaveForWeb/1.0/".to_string(),
+        "http://ns.adobe.com/Variables/1.0/".to_string(),
+        "http://ns.adobe.com/XPath/1.0/".to_string(),
+        "http://purl.org/dc/elements/1.1/".to_string(),
+        "http://schemas.microsoft.com/visio/2003/SVGExtensions/".to_string(),
+        "http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd".to_string(),
+        "http://taptrix.com/vectorillustrator/svg_extensions".to_string(),
+        "http://www.bohemiancoding.com/sketch/ns".to_string(),
+        "http://www.figma.com/figma/ns".to_string(),
+        "http://www.inkscape.org/namespaces/inkscape".to_string(),
+        "http://www.serif.com/".to_string(),
+        "http://www.vector.evaxdesign.sk".to_string(),
+        "http://www.w3.org/1999/02/22-rdf-syntax-ns#".to_string(),
+        "https://boxy-svg.com".to_string(),
+    ]
 }
 
 fn find_root_svg(doc: &Document) -> Option<usize> {

@@ -13,7 +13,7 @@ impl Default for Js2Svg {
     fn default() -> Self {
         Self {
             pretty: false,
-            indent: 2,
+            indent: 4,
         }
     }
 }
