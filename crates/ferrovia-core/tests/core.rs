@@ -74,6 +74,11 @@ fn matches_svgo_oracle_for_remove_empty_containers() {
     assert_oracle_fixture("remove-empty-containers");
 }
 
+#[test]
+fn matches_svgo_oracle_for_move_group_attrs_to_elems() {
+    assert_oracle_fixture("move-group-attrs-to-elems");
+}
+
 fn assert_oracle_fixture(name: &str) {
     let root = workspace_root();
     let svg_path = root.join(format!("tests/fixtures/oracle/{name}.svg"));
@@ -180,5 +185,20 @@ fn remove_empty_containers_preserves_switch_child_and_filtered_group() {
     assert_eq!(
         result.data,
         r#"<svg xmlns="http://www.w3.org/2000/svg"><style>g.keep{filter:url(#fx)}</style><switch><g/></switch><g class="keep"/></svg>"#
+    );
+}
+
+#[test]
+fn move_group_attrs_to_elems_keeps_group_transform_when_url_reference_is_present() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><g transform="scale(2)" clip-path="url(#clip)"><path d="M0 0"/></g></svg>"#;
+    let config = Config {
+        plugins: vec![PluginSpec::Name("moveGroupAttrsToElems".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><g transform="scale(2)" clip-path="url(#clip)"><path d="M0 0"/></g></svg>"#
     );
 }

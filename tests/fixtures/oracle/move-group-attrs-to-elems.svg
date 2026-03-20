@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <g transform="scale(2)">
+    <path d="M0 0" transform="rotate(45)"/>
+    <text transform="translate(1 2)">Hi</text>
+    <g transform="skewX(5)">
+      <path d="M1 1"/>
+    </g>
+  </g>
+</svg>

@@ -16,6 +16,7 @@ const PRESET_DEFAULT: &[&str] = &[
     "cleanupAttrs",
     "removeUselessDefs",
     "removeEmptyText",
+    "moveGroupAttrsToElems",
     "removeEmptyAttrs",
     "removeEmptyContainers",
     "removeUnusedNS",
@@ -42,6 +43,7 @@ pub fn apply_plugins(doc: &mut Document, config: &Config) -> Result<()> {
             "cleanupAttrs" => cleanup_attrs(doc, params.as_ref()),
             "removeUselessDefs" => remove_useless_defs(doc),
             "removeEmptyText" => remove_empty_text(doc, params.as_ref()),
+            "moveGroupAttrsToElems" => move_group_attrs_to_elems(doc),
             "removeEmptyAttrs" => remove_empty_attrs(doc),
             "removeEmptyContainers" => remove_empty_containers(doc),
             "removeUnusedNS" => remove_unused_ns(doc),
@@ -197,6 +199,78 @@ fn remove_elements(doc: &mut Document, name: &str) {
         doc,
         |kind| matches!(kind, NodeKind::Element(element) if element.name == name),
     );
+}
+
+fn move_group_attrs_to_elems(doc: &mut Document) {
+    let target_ids: Vec<_> = doc
+        .nodes
+        .iter()
+        .enumerate()
+        .skip(1)
+        .filter_map(|(id, node)| {
+            let NodeKind::Element(element) = &node.kind else {
+                return None;
+            };
+            if element.name != "g" || doc.node(id).first_child.is_none() {
+                return None;
+            }
+
+            let transform = attribute_named(element.attributes.as_slice(), "transform")?;
+
+            if element.attributes.iter().any(|attribute| {
+                is_reference_property(attribute.name.as_str())
+                    && includes_url_reference(attribute.value.as_str())
+            }) {
+                return None;
+            }
+
+            if !doc.children(id).all(|child_id| {
+                let NodeKind::Element(child) = &doc.node(child_id).kind else {
+                    return false;
+                };
+                is_group_transform_target(child.name.as_str())
+                    && attribute_value(child.attributes.as_slice(), "id").is_none()
+            }) {
+                return None;
+            }
+
+            let _ = transform;
+            Some(id)
+        })
+        .collect();
+
+    for group_id in target_ids {
+        let transform = match &doc.node(group_id).kind {
+            NodeKind::Element(group) => {
+                let Some(transform) = attribute_named(group.attributes.as_slice(), "transform")
+                else {
+                    continue;
+                };
+                transform.clone()
+            }
+            _ => continue,
+        };
+        let child_ids: Vec<_> = doc.children(group_id).collect();
+        for child_id in child_ids {
+            let NodeKind::Element(child) = &mut doc.node_mut(child_id).kind else {
+                continue;
+            };
+            if let Some(existing) =
+                attribute_named_mut(child.attributes.as_mut_slice(), "transform")
+            {
+                existing.value = format!("{} {}", transform.value, existing.value);
+            } else {
+                child.attributes.push(transform.clone());
+            }
+        }
+
+        let NodeKind::Element(group) = &mut doc.node_mut(group_id).kind else {
+            continue;
+        };
+        group
+            .attributes
+            .retain(|attribute| attribute.name != "transform");
+    }
 }
 
 fn remove_empty_containers(doc: &mut Document) {
@@ -667,6 +741,10 @@ fn should_remove_empty_container(
     true
 }
 
+fn is_group_transform_target(name: &str) -> bool {
+    matches!(name, "glyph" | "missing-glyph" | "path" | "g" | "text")
+}
+
 fn group_may_render(attributes: &[Attribute], stylesheet: &FilterStylesheet) -> bool {
     if attribute_value(attributes, "filter").is_some() {
         return true;
@@ -795,6 +873,19 @@ fn attribute_value<'a>(attributes: &'a [Attribute], name: &str) -> Option<&'a st
         .map(|attribute| attribute.value.as_str())
 }
 
+fn attribute_named<'a>(attributes: &'a [Attribute], name: &str) -> Option<&'a Attribute> {
+    attributes.iter().find(|attribute| attribute.name == name)
+}
+
+fn attribute_named_mut<'a>(
+    attributes: &'a mut [Attribute],
+    name: &str,
+) -> Option<&'a mut Attribute> {
+    attributes
+        .iter_mut()
+        .find(|attribute| attribute.name == name)
+}
+
 fn value_references_any_id(value: &str, ids: &HashSet<String>) -> bool {
     let bytes = value.as_bytes();
     let mut index = 0;
@@ -818,6 +909,26 @@ fn value_references_any_id(value: &str, ids: &HashSet<String>) -> bool {
         }
     }
     false
+}
+
+fn includes_url_reference(value: &str) -> bool {
+    value.contains("url(") && value.contains('#')
+}
+
+fn is_reference_property(name: &str) -> bool {
+    matches!(
+        name,
+        "clip-path"
+            | "color-profile"
+            | "fill"
+            | "filter"
+            | "marker-end"
+            | "marker-mid"
+            | "marker-start"
+            | "mask"
+            | "stroke"
+            | "style"
+    )
 }
 
 fn collapse_attribute_newlines(value: &str) -> String {
