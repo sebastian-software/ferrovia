@@ -1,0 +1,32 @@
+[workspace]
+members = [
+  "crates/ferrovia-core",
+  "crates/ferrovia-cli",
+  "crates/ferrovia-napi",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/sebastian-software/ferrovia"
+authors = ["Sebastian <sebastian@example.com>"]
+
+[workspace.dependencies]
+memchr = "2.7.4"
+napi = { version = "3.3.0", default-features = false, features = ["napi9", "serde-json"] }
+napi-build = "2.1.5"
+napi-derive = "3.2.5"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+thiserror = "2.0.17"
+
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"
+nursery = "warn"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+

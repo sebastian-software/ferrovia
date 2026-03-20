@@ -1,0 +1,16 @@
+{
+  "name": "ferrovia-workspace",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.9",
+  "scripts": {
+    "oracle": "node ./scripts/run-svgo-oracle.mjs",
+    "test:oracle": "node ./scripts/run-svgo-oracle.mjs ./tests/fixtures/oracle/remove-comments.svg ./tests/fixtures/oracle/remove-comments.config.json",
+    "build:napi": "pnpm exec napi build --manifest-path crates/ferrovia-napi/Cargo.toml --package-json-path packages/node/package.json --output-dir packages/node --platform --release --no-js",
+    "test:node": "node ./tests/node-smoke.mjs"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^3.5.1",
+    "svgo": "4.0.1"
+  }
+}

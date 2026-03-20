@@ -1,0 +1,16 @@
+{
+  "name": "ferrovia-node",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./index.mjs",
+  "exports": {
+    ".": "./index.mjs"
+  },
+  "scripts": {
+    "build": "pnpm --dir ../.. build:napi"
+  },
+  "files": [
+    "index.mjs",
+    "*.node"
+  ]
+}

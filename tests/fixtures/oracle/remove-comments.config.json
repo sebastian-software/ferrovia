@@ -1,0 +1,14 @@
+{
+  "plugins": [
+    "removeXMLProcInst",
+    "removeDoctype",
+    {
+      "name": "removeComments",
+      "params": {
+        "preservePatterns": ["^!"]
+      }
+    },
+    "removeMetadata",
+    "removeTitle"
+  ]
+}

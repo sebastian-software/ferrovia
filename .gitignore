@@ -1,0 +1,7 @@
+target/
+node_modules/
+dist/
+coverage/
+*.log
+packages/node/*.node
+packages/node/*.d.ts
