@@ -69,6 +69,11 @@ fn matches_svgo_oracle_for_remove_xmlns() {
     assert_oracle_fixture("remove-xmlns");
 }
 
+#[test]
+fn matches_svgo_oracle_for_remove_empty_containers() {
+    assert_oracle_fixture("remove-empty-containers");
+}
+
 fn assert_oracle_fixture(name: &str) {
     let root = workspace_root();
     let svg_path = root.join(format!("tests/fixtures/oracle/{name}.svg"));
@@ -145,5 +150,35 @@ fn sort_attrs_supports_alphabetical_xmlns_order() {
         r#"<svg width="10" height="10" baz="quux" foo="bar" hello="world" xmlns="http://www.w3.org/2000/svg">
     <rect width="100" height="100" x="0" y="0" fill="red" stroke="orange" stroke-linejoin="round" stroke-width="1" xmlns="http://www.w3.org/2000/svg"/>
 </svg>"#
+    );
+}
+
+#[test]
+fn remove_empty_containers_removes_empty_defs_and_referencing_use() {
+    let svg = r##"<svg xmlns="http://www.w3.org/2000/svg"><defs id="gone"/><use href="#gone"/><mask id="keep"/></svg>"##;
+    let config = Config {
+        plugins: vec![PluginSpec::Name("removeEmptyContainers".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><mask id="keep"/></svg>"#
+    );
+}
+
+#[test]
+fn remove_empty_containers_preserves_switch_child_and_filtered_group() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><style>g.keep{filter:url(#fx)}</style><switch><g/></switch><g class="keep"/><g/></svg>"#;
+    let config = Config {
+        plugins: vec![PluginSpec::Name("removeEmptyContainers".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><style>g.keep{filter:url(#fx)}</style><switch><g/></switch><g class="keep"/></svg>"#
     );
 }

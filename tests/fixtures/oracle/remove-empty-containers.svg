@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <style>g.keep{filter:url(#fx)}</style>
+  <defs id="gone"/>
+  <pattern id="keep-pattern"/>
+  <mask id="keep-mask"/>
+  <switch>
+    <g/>
+  </switch>
+  <g filter="url(#fx)"/>
+  <g class="keep"/>
+  <g/>
+  <use href="#gone"/>
+  <path d="M0 0"/>
+</svg>

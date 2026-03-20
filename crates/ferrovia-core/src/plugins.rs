@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use serde_json::Value;
 
 use crate::ast::{Attribute, Document, NodeKind, QuoteStyle};
@@ -15,6 +17,7 @@ const PRESET_DEFAULT: &[&str] = &[
     "removeUselessDefs",
     "removeEmptyText",
     "removeEmptyAttrs",
+    "removeEmptyContainers",
     "removeUnusedNS",
     "sortAttrs",
     "sortDefsChildren",
@@ -40,6 +43,7 @@ pub fn apply_plugins(doc: &mut Document, config: &Config) -> Result<()> {
             "removeUselessDefs" => remove_useless_defs(doc),
             "removeEmptyText" => remove_empty_text(doc, params.as_ref()),
             "removeEmptyAttrs" => remove_empty_attrs(doc),
+            "removeEmptyContainers" => remove_empty_containers(doc),
             "removeUnusedNS" => remove_unused_ns(doc),
             "sortAttrs" => sort_attrs(doc, params.as_ref()),
             "sortDefsChildren" => sort_defs_children(doc),
@@ -193,6 +197,61 @@ fn remove_elements(doc: &mut Document, name: &str) {
         doc,
         |kind| matches!(kind, NodeKind::Element(element) if element.name == name),
     );
+}
+
+fn remove_empty_containers(doc: &mut Document) {
+    let stylesheet = collect_filter_stylesheet(doc);
+    let targets: Vec<_> = doc
+        .nodes
+        .iter()
+        .enumerate()
+        .skip(1)
+        .filter_map(|(id, node)| {
+            let NodeKind::Element(element) = &node.kind else {
+                return None;
+            };
+            if should_remove_empty_container(doc, id, element.name.as_str(), &stylesheet) {
+                return Some(id);
+            }
+            None
+        })
+        .collect();
+
+    let mut removed_ids = HashSet::new();
+    for target_id in targets {
+        if let NodeKind::Element(element) = &doc.node(target_id).kind
+            && let Some(id) = attribute_value(element.attributes.as_slice(), "id")
+        {
+            removed_ids.insert(id.to_string());
+        }
+        detach_node(doc, target_id);
+    }
+
+    if removed_ids.is_empty() {
+        return;
+    }
+
+    let uses_to_remove: Vec<_> = doc
+        .nodes
+        .iter()
+        .enumerate()
+        .skip(1)
+        .filter_map(|(id, node)| match &node.kind {
+            NodeKind::Element(element)
+                if element.name == "use"
+                    && element.attributes.iter().any(|attribute| {
+                        value_references_any_id(&attribute.value, &removed_ids)
+                    }) =>
+            {
+                Some(id)
+            }
+            _ => None,
+        })
+        .collect();
+
+    for use_id in uses_to_remove {
+        detach_node(doc, use_id);
+    }
 }
 
 fn remove_desc(doc: &mut Document, params: Option<&Value>) {
@@ -567,6 +626,200 @@ fn remove_xmlns(doc: &mut Document) {
         .retain(|attribute| attribute.name.as_str() != "xmlns");
 }
 
+fn should_remove_empty_container(
+    doc: &Document,
+    node_id: usize,
+    name: &str,
+    stylesheet: &FilterStylesheet,
+) -> bool {
+    if name == "svg" || !is_container_element(name) || doc.node(node_id).first_child.is_some() {
+        return false;
+    }
+
+    let NodeKind::Element(element) = &doc.node(node_id).kind else {
+        return false;
+    };
+
+    if name == "pattern" && !element.attributes.is_empty() {
+        return false;
+    }
+
+    if name == "mask" && attribute_value(element.attributes.as_slice(), "id").is_some() {
+        return false;
+    }
+
+    if doc
+        .node(node_id)
+        .parent
+        .and_then(|parent_id| match &doc.node(parent_id).kind {
+            NodeKind::Element(parent) => Some(parent.name.as_str()),
+            _ => None,
+        })
+        == Some("switch")
+    {
+        return false;
+    }
+
+    if name == "g" && group_may_render(element.attributes.as_slice(), stylesheet) {
+        return false;
+    }
+
+    true
+}
+
+fn group_may_render(attributes: &[Attribute], stylesheet: &FilterStylesheet) -> bool {
+    if attribute_value(attributes, "filter").is_some() {
+        return true;
+    }
+
+    if attribute_value(attributes, "style").is_some_and(style_declares_filter) {
+        return true;
+    }
+
+    stylesheet.matches(attributes)
+}
+
+#[derive(Debug, Default)]
+struct FilterStylesheet {
+    has_universal_filter: bool,
+    has_g_filter: bool,
+    id_filters: HashSet<String>,
+    class_filters: HashSet<String>,
+}
+
+impl FilterStylesheet {
+    fn matches(&self, attributes: &[Attribute]) -> bool {
+        if self.has_universal_filter || self.has_g_filter {
+            return true;
+        }
+
+        if attribute_value(attributes, "id").is_some_and(|id| self.id_filters.contains(id)) {
+            return true;
+        }
+
+        attribute_value(attributes, "class").is_some_and(|classes| {
+            classes
+                .split_whitespace()
+                .any(|class_name| self.class_filters.contains(class_name))
+        })
+    }
+}
+
+fn collect_filter_stylesheet(doc: &Document) -> FilterStylesheet {
+    let mut stylesheet = FilterStylesheet::default();
+    for (node_id, node) in doc.nodes.iter().enumerate() {
+        let NodeKind::Element(element) = &node.kind else {
+            continue;
+        };
+        if element.name != "style" {
+            continue;
+        }
+        for child_id in doc.children(node_id) {
+            match &doc.node(child_id).kind {
+                NodeKind::Text(text) | NodeKind::Cdata(text) => {
+                    ingest_filter_rules(text, &mut stylesheet);
+                }
+                _ => {}
+            }
+        }
+    }
+    stylesheet
+}
+
+fn ingest_filter_rules(css: &str, stylesheet: &mut FilterStylesheet) {
+    for rule in css.split('}') {
+        let Some((selectors, declarations)) = rule.split_once('{') else {
+            continue;
+        };
+        if !declarations_have_filter(declarations) {
+            continue;
+        }
+        for selector in selectors.split(',').map(str::trim) {
+            if selector.is_empty() {
+                continue;
+            }
+            match selector {
+                "*" => stylesheet.has_universal_filter = true,
+                "g" => stylesheet.has_g_filter = true,
+                _ => {
+                    if let Some(id) = selector.strip_prefix('#')
+                        && is_simple_selector(id)
+                    {
+                        stylesheet.id_filters.insert(id.to_string());
+                    }
+                    if let Some(class_name) = selector.strip_prefix('.')
+                        && is_simple_selector(class_name)
+                    {
+                        stylesheet.class_filters.insert(class_name.to_string());
+                    }
+                    if let Some((element_name, class_name)) = selector.split_once('.')
+                        && element_name == "g"
+                        && is_simple_selector(class_name)
+                    {
+                        stylesheet.class_filters.insert(class_name.to_string());
+                    }
+                    if let Some((element_name, id)) = selector.split_once('#')
+                        && element_name == "g"
+                        && is_simple_selector(id)
+                    {
+                        stylesheet.id_filters.insert(id.to_string());
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn declarations_have_filter(declarations: &str) -> bool {
+    declarations
+        .split(';')
+        .filter_map(|declaration| declaration.split_once(':'))
+        .any(|(name, _)| name.trim() == "filter")
+}
+
+fn style_declares_filter(style: &str) -> bool {
+    declarations_have_filter(style)
+}
+
+fn is_simple_selector(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .chars()
+            .all(|char| char.is_ascii_alphanumeric() || matches!(char, '_' | '-' | ':'))
+}
+
+fn attribute_value<'a>(attributes: &'a [Attribute], name: &str) -> Option<&'a str> {
+    attributes
+        .iter()
+        .find(|attribute| attribute.name == name)
+        .map(|attribute| attribute.value.as_str())
+}
+
+fn value_references_any_id(value: &str, ids: &HashSet<String>) -> bool {
+    let bytes = value.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] != b'#' {
+            index += 1;
+            continue;
+        }
+        index += 1;
+        let start = index;
+        while index < bytes.len() {
+            let char = char::from(bytes[index]);
+            if char.is_ascii_alphanumeric() || matches!(char, '_' | '-' | '.' | ':') {
+                index += 1;
+            } else {
+                break;
+            }
+        }
+        if start < index && ids.contains(&value[start..index]) {
+            return true;
+        }
+    }
+    false
+}
+
 fn collapse_attribute_newlines(value: &str) -> String {
     let bytes = value.as_bytes();
     let mut out = String::with_capacity(value.len());
@@ -625,6 +878,22 @@ fn is_non_rendering(name: &str) -> bool {
             | "pattern"
             | "radialGradient"
             | "solidColor"
+            | "symbol"
+    )
+}
+
+fn is_container_element(name: &str) -> bool {
+    matches!(
+        name,
+        "a" | "defs"
+            | "foreignObject"
+            | "g"
+            | "marker"
+            | "mask"
+            | "missing-glyph"
+            | "pattern"
+            | "svg"
+            | "switch"
             | "symbol"
     )
 }
