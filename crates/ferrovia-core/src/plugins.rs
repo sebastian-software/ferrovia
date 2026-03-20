@@ -16,6 +16,7 @@ const PRESET_DEFAULT: &[&str] = &[
     "cleanupAttrs",
     "removeUselessDefs",
     "removeEmptyText",
+    "moveElemsAttrsToGroup",
     "moveGroupAttrsToElems",
     "removeEmptyAttrs",
     "removeEmptyContainers",
@@ -43,6 +44,7 @@ pub fn apply_plugins(doc: &mut Document, config: &Config) -> Result<()> {
             "cleanupAttrs" => cleanup_attrs(doc, params.as_ref()),
             "removeUselessDefs" => remove_useless_defs(doc),
             "removeEmptyText" => remove_empty_text(doc, params.as_ref()),
+            "moveElemsAttrsToGroup" => move_elems_attrs_to_group(doc),
             "moveGroupAttrsToElems" => move_group_attrs_to_elems(doc),
             "removeEmptyAttrs" => remove_empty_attrs(doc),
             "removeEmptyContainers" => remove_empty_containers(doc),
@@ -270,6 +272,119 @@ fn move_group_attrs_to_elems(doc: &mut Document) {
         group
             .attributes
             .retain(|attribute| attribute.name != "transform");
+    }
+}
+
+fn move_elems_attrs_to_group(doc: &mut Document) {
+    if doc
+        .nodes
+        .iter()
+        .any(|node| matches!(&node.kind, NodeKind::Element(element) if element.name == "style"))
+    {
+        return;
+    }
+
+    let target_ids: Vec<_> = doc
+        .nodes
+        .iter()
+        .enumerate()
+        .skip(1)
+        .rev()
+        .filter_map(|(id, node)| match &node.kind {
+            NodeKind::Element(element) if element.name == "g" && doc.children(id).count() > 1 => {
+                Some(id)
+            }
+            _ => None,
+        })
+        .collect();
+
+    for group_id in target_ids {
+        let child_ids: Vec<_> = doc.children(group_id).collect();
+        let mut common_attributes: Vec<Attribute> = Vec::new();
+        let mut initialized = false;
+        let mut every_child_is_path = true;
+
+        for child_id in &child_ids {
+            let NodeKind::Element(child) = &doc.node(*child_id).kind else {
+                continue;
+            };
+
+            if !is_path_element(child.name.as_str()) {
+                every_child_is_path = false;
+            }
+
+            if initialized {
+                common_attributes.retain(|attribute| {
+                    attribute_value(child.attributes.as_slice(), attribute.name.as_str())
+                        == Some(attribute.value.as_str())
+                });
+            } else {
+                initialized = true;
+                common_attributes = child
+                    .attributes
+                    .iter()
+                    .filter(|attribute| is_inheritable_attr(attribute.name.as_str()))
+                    .cloned()
+                    .collect();
+            }
+        }
+
+        if common_attributes.is_empty() {
+            continue;
+        }
+
+        let group_attributes = match &doc.node(group_id).kind {
+            NodeKind::Element(group) => group.attributes.clone(),
+            _ => continue,
+        };
+        if attribute_value(group_attributes.as_slice(), "filter").is_some()
+            || attribute_value(group_attributes.as_slice(), "clip-path").is_some()
+            || attribute_value(group_attributes.as_slice(), "mask").is_some()
+            || every_child_is_path
+        {
+            common_attributes.retain(|attribute| attribute.name != "transform");
+        }
+
+        if common_attributes.is_empty() {
+            continue;
+        }
+
+        {
+            let NodeKind::Element(group) = &mut doc.node_mut(group_id).kind else {
+                continue;
+            };
+            for attribute in &common_attributes {
+                if attribute.name == "transform" {
+                    if let Some(existing) =
+                        attribute_named_mut(group.attributes.as_mut_slice(), "transform")
+                    {
+                        existing.value = format!("{} {}", existing.value, attribute.value);
+                    } else {
+                        group.attributes.push(attribute.clone());
+                    }
+                } else if let Some(existing) =
+                    attribute_named_mut(group.attributes.as_mut_slice(), attribute.name.as_str())
+                {
+                    existing.value.clone_from(&attribute.value);
+                    existing.quote = attribute.quote;
+                } else {
+                    group.attributes.push(attribute.clone());
+                }
+            }
+        }
+
+        let names: HashSet<_> = common_attributes
+            .iter()
+            .map(|attribute| attribute.name.clone())
+            .collect();
+        for child_id in child_ids {
+            let NodeKind::Element(child) = &mut doc.node_mut(child_id).kind else {
+                continue;
+            };
+            child
+                .attributes
+                .retain(|attribute| !names.contains(&attribute.name));
+        }
     }
 }
 
@@ -745,6 +860,10 @@ fn is_group_transform_target(name: &str) -> bool {
     matches!(name, "glyph" | "missing-glyph" | "path" | "g" | "text")
 }
 
+fn is_path_element(name: &str) -> bool {
+    matches!(name, "glyph" | "missing-glyph" | "path")
+}
+
 fn group_may_render(attributes: &[Attribute], stylesheet: &FilterStylesheet) -> bool {
     if attribute_value(attributes, "filter").is_some() {
         return true;
@@ -913,6 +1032,57 @@ fn value_references_any_id(value: &str, ids: &HashSet<String>) -> bool {
 
 fn includes_url_reference(value: &str) -> bool {
     value.contains("url(") && value.contains('#')
+}
+
+fn is_inheritable_attr(name: &str) -> bool {
+    matches!(
+        name,
+        "clip-rule"
+            | "color-interpolation-filters"
+            | "color-interpolation"
+            | "color-profile"
+            | "color-rendering"
+            | "color"
+            | "cursor"
+            | "direction"
+            | "dominant-baseline"
+            | "fill-opacity"
+            | "fill-rule"
+            | "fill"
+            | "font-family"
+            | "font-size-adjust"
+            | "font-size"
+            | "font-stretch"
+            | "font-style"
+            | "font-variant"
+            | "font-weight"
+            | "font"
+            | "glyph-orientation-horizontal"
+            | "glyph-orientation-vertical"
+            | "image-rendering"
+            | "letter-spacing"
+            | "marker-end"
+            | "marker-mid"
+            | "marker-start"
+            | "marker"
+            | "paint-order"
+            | "pointer-events"
+            | "shape-rendering"
+            | "stroke-dasharray"
+            | "stroke-dashoffset"
+            | "stroke-linecap"
+            | "stroke-linejoin"
+            | "stroke-miterlimit"
+            | "stroke-opacity"
+            | "stroke-width"
+            | "stroke"
+            | "text-anchor"
+            | "text-rendering"
+            | "transform"
+            | "visibility"
+            | "word-spacing"
+            | "writing-mode"
+    )
 }
 
 fn is_reference_property(name: &str) -> bool {

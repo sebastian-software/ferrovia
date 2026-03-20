@@ -79,6 +79,11 @@ fn matches_svgo_oracle_for_move_group_attrs_to_elems() {
     assert_oracle_fixture("move-group-attrs-to-elems");
 }
 
+#[test]
+fn matches_svgo_oracle_for_move_elems_attrs_to_group() {
+    assert_oracle_fixture("move-elems-attrs-to-group");
+}
+
 fn assert_oracle_fixture(name: &str) {
     let root = workspace_root();
     let svg_path = root.join(format!("tests/fixtures/oracle/{name}.svg"));
@@ -201,4 +206,20 @@ fn move_group_attrs_to_elems_keeps_group_transform_when_url_reference_is_present
         result.data,
         r#"<svg xmlns="http://www.w3.org/2000/svg"><g transform="scale(2)" clip-path="url(#clip)"><path d="M0 0"/></g></svg>"#
     );
+}
+
+#[test]
+fn move_elems_attrs_to_group_deoptimizes_when_style_exists() {
+    let svg = concat!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><style>.x"#,
+        "{fill:red}",
+        r#"</style><g><path class="x" fill="red" d="M0 0"/><circle class="x" fill="red" cx="5" cy="5" r="5"/></g></svg>"#
+    );
+    let config = Config {
+        plugins: vec![PluginSpec::Name("moveElemsAttrsToGroup".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(result.data, svg);
 }
