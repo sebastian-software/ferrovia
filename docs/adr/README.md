@@ -10,6 +10,6 @@ This directory captures the current ferrovia decisions in descending importance.
 - `0004` public surfaces and packaging
 - `0005` config and plugin model
 - `0006` delivery and commit discipline
+- `0007` wave ordering and commit strategy
 
 New ADRs should continue the numeric sequence. If a later decision supersedes an older one, add a new ADR and link back to the superseded document instead of rewriting history.
-

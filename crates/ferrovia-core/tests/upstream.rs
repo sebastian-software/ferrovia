@@ -28,6 +28,10 @@ fn upstream_plugin_fixture_matrix_matches_svgo() {
         ("removeEmptyText", "removeEmptyText.01.svg.txt"),
         ("removeEmptyText", "removeEmptyText.02.svg.txt"),
         ("removeEmptyText", "removeEmptyText.03.svg.txt"),
+        ("sortAttrs", "sortAttrs.01.svg.txt"),
+        ("sortAttrs", "sortAttrs.02.svg.txt"),
+        ("sortAttrs", "sortAttrs.03.svg.txt"),
+        ("sortAttrs", "sortAttrs.04.svg.txt"),
         ("removeTitle", "removeTitle.01.svg.txt"),
     ];
 

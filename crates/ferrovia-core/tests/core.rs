@@ -122,3 +122,28 @@ fn preset_default_honors_boolean_overrides() {
     let result = optimize(svg, &config).expect("optimize");
     assert_eq!(result.data, r"<svg><!--keep me--></svg>");
 }
+
+#[test]
+fn sort_attrs_supports_alphabetical_xmlns_order() {
+    let svg = r#"<svg foo="bar" xmlns="http://www.w3.org/2000/svg" height="10" baz="quux" width="10" hello="world"><rect x="0" y="0" width="100" height="100" stroke-width="1" stroke-linejoin="round" fill="red" stroke="orange" xmlns="http://www.w3.org/2000/svg"/></svg>"#;
+    let config = Config {
+        plugins: vec![PluginSpec::Configured(PluginConfig {
+            name: "sortAttrs".to_string(),
+            params: Some(json!({ "xmlnsOrder": "alphabetical" })),
+            enabled: true,
+        })],
+        js2svg: ferrovia_core::Js2Svg {
+            pretty: true,
+            indent: 4,
+        },
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data.trim(),
+        r#"<svg width="10" height="10" baz="quux" foo="bar" hello="world" xmlns="http://www.w3.org/2000/svg">
+    <rect width="100" height="100" x="0" y="0" fill="red" stroke="orange" stroke-linejoin="round" stroke-width="1" xmlns="http://www.w3.org/2000/svg"/>
+</svg>"#
+    );
+}

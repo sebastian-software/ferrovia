@@ -14,6 +14,7 @@ const PRESET_DEFAULT: &[&str] = &[
     "cleanupAttrs",
     "removeEmptyText",
     "removeEmptyAttrs",
+    "sortAttrs",
 ];
 
 /// Apply the configured plugin pipeline to an already parsed document.
@@ -35,6 +36,7 @@ pub fn apply_plugins(doc: &mut Document, config: &Config) -> Result<()> {
             "cleanupAttrs" => cleanup_attrs(doc, params.as_ref()),
             "removeEmptyText" => remove_empty_text(doc, params.as_ref()),
             "removeEmptyAttrs" => remove_empty_attrs(doc),
+            "sortAttrs" => sort_attrs(doc, params.as_ref()),
             "removeTitle" => remove_elements(doc, "title"),
             "removeDesc" => remove_desc(doc, params.as_ref()),
             "removeDimensions" => remove_dimensions(doc),
@@ -212,6 +214,32 @@ fn remove_dimensions(doc: &mut Document) {
             value: format!("0 0 {width} {height}"),
             quote: QuoteStyle::Double,
         });
+    }
+}
+
+fn sort_attrs(doc: &mut Document, params: Option<&Value>) {
+    let order = params
+        .and_then(|value| value.get("order"))
+        .and_then(Value::as_array)
+        .map_or_else(default_sort_attr_order, |array| {
+            array
+                .iter()
+                .filter_map(Value::as_str)
+                .map(ToOwned::to_owned)
+                .collect::<Vec<_>>()
+        });
+    let xmlns_order = params
+        .and_then(|value| value.get("xmlnsOrder"))
+        .and_then(Value::as_str)
+        .unwrap_or("front");
+
+    for node in &mut doc.nodes {
+        let NodeKind::Element(element) = &mut node.kind else {
+            continue;
+        };
+        element
+            .attributes
+            .sort_by(|left, right| compare_attrs(&left.name, &right.name, &order, xmlns_order));
     }
 }
 
@@ -440,6 +468,63 @@ fn collapse_repeating_spaces(value: &str) -> String {
         }
     }
     out
+}
+
+fn default_sort_attr_order() -> Vec<String> {
+    [
+        "id", "width", "height", "x", "x1", "x2", "y", "y1", "y2", "cx", "cy", "r", "fill",
+        "stroke", "marker", "d", "points",
+    ]
+    .iter()
+    .map(|value| (*value).to_string())
+    .collect()
+}
+
+fn compare_attrs(
+    left: &str,
+    right: &str,
+    order: &[String],
+    xmlns_order: &str,
+) -> std::cmp::Ordering {
+    let left_priority = namespace_priority(left, xmlns_order);
+    let right_priority = namespace_priority(right, xmlns_order);
+    match right_priority.cmp(&left_priority) {
+        std::cmp::Ordering::Equal => {}
+        ordering => return ordering,
+    }
+
+    let left_part = left.split('-').next().unwrap_or(left);
+    let right_part = right.split('-').next().unwrap_or(right);
+    if left_part != right_part {
+        let left_index = order.iter().position(|item| item == left_part);
+        let right_index = order.iter().position(|item| item == right_part);
+        match (left_index, right_index) {
+            (Some(left_index), Some(right_index)) => match left_index.cmp(&right_index) {
+                std::cmp::Ordering::Equal => {}
+                ordering => return ordering,
+            },
+            (Some(_), None) => return std::cmp::Ordering::Less,
+            (None, Some(_)) => return std::cmp::Ordering::Greater,
+            (None, None) => {}
+        }
+    }
+
+    left.cmp(right)
+}
+
+fn namespace_priority(name: &str, xmlns_order: &str) -> usize {
+    if xmlns_order == "front" {
+        if name == "xmlns" {
+            return 3;
+        }
+        if name.starts_with("xmlns:") {
+            return 2;
+        }
+    }
+    if name.contains(':') {
+        return 1;
+    }
+    0
 }
 
 fn editor_namespaces() -> Vec<String> {
