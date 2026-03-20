@@ -15,6 +15,7 @@ const PRESET_DEFAULT: &[&str] = &[
     "removeEmptyText",
     "removeEmptyAttrs",
     "sortAttrs",
+    "sortDefsChildren",
 ];
 
 /// Apply the configured plugin pipeline to an already parsed document.
@@ -37,6 +38,7 @@ pub fn apply_plugins(doc: &mut Document, config: &Config) -> Result<()> {
             "removeEmptyText" => remove_empty_text(doc, params.as_ref()),
             "removeEmptyAttrs" => remove_empty_attrs(doc),
             "sortAttrs" => sort_attrs(doc, params.as_ref()),
+            "sortDefsChildren" => sort_defs_children(doc),
             "removeTitle" => remove_elements(doc, "title"),
             "removeDesc" => remove_desc(doc, params.as_ref()),
             "removeDimensions" => remove_dimensions(doc),
@@ -240,6 +242,52 @@ fn sort_attrs(doc: &mut Document, params: Option<&Value>) {
         element
             .attributes
             .sort_by(|left, right| compare_attrs(&left.name, &right.name, &order, xmlns_order));
+    }
+}
+
+fn sort_defs_children(doc: &mut Document) {
+    let defs_ids: Vec<_> = doc
+        .nodes
+        .iter()
+        .enumerate()
+        .filter_map(|(id, node)| match &node.kind {
+            NodeKind::Element(element) if element.name == "defs" => Some(id),
+            _ => None,
+        })
+        .collect();
+
+    for defs_id in defs_ids {
+        let mut children: Vec<_> = doc.children(defs_id).collect();
+        let mut frequencies = std::collections::BTreeMap::<String, usize>::new();
+        for child_id in &children {
+            if let NodeKind::Element(element) = &doc.node(*child_id).kind {
+                *frequencies.entry(element.name.clone()).or_default() += 1;
+            }
+        }
+
+        children.sort_by(|left, right| {
+            let left_node = doc.node(*left);
+            let right_node = doc.node(*right);
+            let (NodeKind::Element(left_element), NodeKind::Element(right_element)) =
+                (&left_node.kind, &right_node.kind)
+            else {
+                return std::cmp::Ordering::Equal;
+            };
+
+            let left_frequency = frequencies.get(&left_element.name).copied().unwrap_or(0);
+            let right_frequency = frequencies.get(&right_element.name).copied().unwrap_or(0);
+            match right_frequency.cmp(&left_frequency) {
+                std::cmp::Ordering::Equal => {}
+                ordering => return ordering,
+            }
+            match right_element.name.len().cmp(&left_element.name.len()) {
+                std::cmp::Ordering::Equal => {}
+                ordering => return ordering,
+            }
+            right_element.name.cmp(&left_element.name)
+        });
+
+        doc.reorder_children(defs_id, &children);
     }
 }
 

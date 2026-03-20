@@ -44,6 +44,22 @@ impl Document {
         }
     }
 
+    pub fn reorder_children(&mut self, parent: NodeId, ordered_children: &[NodeId]) {
+        if ordered_children.is_empty() {
+            self.nodes[parent].first_child = None;
+            self.nodes[parent].last_child = None;
+            return;
+        }
+
+        self.nodes[parent].first_child = Some(ordered_children[0]);
+        self.nodes[parent].last_child = ordered_children.last().copied();
+
+        for (index, child) in ordered_children.iter().copied().enumerate() {
+            self.nodes[child].parent = Some(parent);
+            self.nodes[child].next_sibling = ordered_children.get(index + 1).copied();
+        }
+    }
+
     #[must_use]
     pub fn node(&self, id: NodeId) -> &Node {
         &self.nodes[id]

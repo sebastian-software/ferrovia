@@ -32,6 +32,7 @@ fn upstream_plugin_fixture_matrix_matches_svgo() {
         ("sortAttrs", "sortAttrs.02.svg.txt"),
         ("sortAttrs", "sortAttrs.03.svg.txt"),
         ("sortAttrs", "sortAttrs.04.svg.txt"),
+        ("sortDefsChildren", "sortDefsChildren.01.svg.txt"),
         ("removeTitle", "removeTitle.01.svg.txt"),
     ];
 
