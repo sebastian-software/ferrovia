@@ -84,6 +84,11 @@ fn matches_svgo_oracle_for_move_elems_attrs_to_group() {
     assert_oracle_fixture("move-elems-attrs-to-group");
 }
 
+#[test]
+fn matches_svgo_oracle_for_collapse_groups() {
+    assert_oracle_fixture("collapse-groups");
+}
+
 fn assert_oracle_fixture(name: &str) {
     let root = workspace_root();
     let svg_path = root.join(format!("tests/fixtures/oracle/{name}.svg"));
@@ -119,8 +124,7 @@ fn assert_oracle_fixture(name: &str) {
 
 #[test]
 fn preset_default_honors_boolean_overrides() {
-    let svg =
-        r#"<?xml version="1.0"?><!DOCTYPE svg><svg><!--keep me--><metadata>meta</metadata></svg>"#;
+    let svg = r#"<?xml version="1.0"?><!DOCTYPE svg><svg><!--keep me--><metadata>meta</metadata><desc>Created with Sketch.</desc></svg>"#;
     let config = Config {
         plugins: vec![PluginSpec::Configured(PluginConfig {
             name: "preset-default".to_string(),
@@ -222,4 +226,31 @@ fn move_elems_attrs_to_group_deoptimizes_when_style_exists() {
 
     let result = optimize(svg, &config).expect("optimize");
     assert_eq!(result.data, svg);
+}
+
+#[test]
+fn collapse_groups_preserves_group_with_animation_child() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><g><animate attributeName="opacity"/><path d="M0 0"/></g></svg>"#;
+    let config = Config {
+        plugins: vec![PluginSpec::Name("collapseGroups".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(result.data, svg);
+}
+
+#[test]
+fn collapse_groups_merges_single_child_group_when_safe() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><g><g fill="red" transform="scale(2)"><path d="M0 0" transform="rotate(5)"/></g></g></svg>"#;
+    let config = Config {
+        plugins: vec![PluginSpec::Name("collapseGroups".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0" transform="scale(2) rotate(5)" fill="red"/></svg>"#
+    );
 }

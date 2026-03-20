@@ -18,11 +18,13 @@ const PRESET_DEFAULT: &[&str] = &[
     "removeEmptyText",
     "moveElemsAttrsToGroup",
     "moveGroupAttrsToElems",
+    "collapseGroups",
     "removeEmptyAttrs",
     "removeEmptyContainers",
     "removeUnusedNS",
     "sortAttrs",
     "sortDefsChildren",
+    "removeDesc",
 ];
 
 /// Apply the configured plugin pipeline to an already parsed document.
@@ -46,6 +48,7 @@ pub fn apply_plugins(doc: &mut Document, config: &Config) -> Result<()> {
             "removeEmptyText" => remove_empty_text(doc, params.as_ref()),
             "moveElemsAttrsToGroup" => move_elems_attrs_to_group(doc),
             "moveGroupAttrsToElems" => move_group_attrs_to_elems(doc),
+            "collapseGroups" => collapse_groups(doc),
             "removeEmptyAttrs" => remove_empty_attrs(doc),
             "removeEmptyContainers" => remove_empty_containers(doc),
             "removeUnusedNS" => remove_unused_ns(doc),
@@ -386,6 +389,122 @@ fn move_elems_attrs_to_group(doc: &mut Document) {
                 .retain(|attribute| !names.contains(&attribute.name));
         }
     }
+}
+
+fn collapse_groups(doc: &mut Document) {
+    let stylesheet = collect_filter_stylesheet(doc);
+    let target_ids: Vec<_> = doc
+        .nodes
+        .iter()
+        .enumerate()
+        .skip(1)
+        .rev()
+        .filter_map(|(id, node)| match &node.kind {
+            NodeKind::Element(element) if element.name == "g" => Some(id),
+            _ => None,
+        })
+        .collect();
+
+    for group_id in target_ids {
+        let Some(parent_id) = doc.node(group_id).parent else {
+            continue;
+        };
+        match &doc.node(parent_id).kind {
+            NodeKind::Document => continue,
+            NodeKind::Element(parent) if parent.name == "switch" => continue,
+            _ => (),
+        }
+
+        if doc.node(group_id).first_child.is_none() {
+            continue;
+        }
+
+        collapse_single_child_group(doc, group_id, &stylesheet);
+
+        let should_collapse = match &doc.node(group_id).kind {
+            NodeKind::Element(group) => group.attributes.is_empty(),
+            _ => false,
+        };
+
+        if should_collapse && !group_has_animation_children(doc, group_id) {
+            replace_node_with_children(doc, group_id);
+        }
+    }
+}
+
+fn collapse_single_child_group(doc: &mut Document, group_id: usize, stylesheet: &FilterStylesheet) {
+    let child_ids: Vec<_> = doc.children(group_id).collect();
+    if child_ids.len() != 1 {
+        return;
+    }
+
+    let child_id = child_ids[0];
+    let group_attributes = match &doc.node(group_id).kind {
+        NodeKind::Element(group) if !group.attributes.is_empty() => group.attributes.clone(),
+        _ => return,
+    };
+
+    let can_merge = {
+        let NodeKind::Element(child) = &doc.node(child_id).kind else {
+            return;
+        };
+        if attribute_value(child.attributes.as_slice(), "id").is_some() {
+            return;
+        }
+        if element_has_filter(group_attributes.as_slice(), stylesheet) {
+            return;
+        }
+        if attribute_value(group_attributes.as_slice(), "class").is_some()
+            && attribute_value(child.attributes.as_slice(), "class").is_some()
+        {
+            return;
+        }
+        if (attribute_value(group_attributes.as_slice(), "clip-path").is_some()
+            || attribute_value(group_attributes.as_slice(), "mask").is_some())
+            && !(child.name == "g"
+                && attribute_value(group_attributes.as_slice(), "transform").is_none()
+                && attribute_value(child.attributes.as_slice(), "transform").is_none())
+        {
+            return;
+        }
+        if group_attributes
+            .iter()
+            .any(|attribute| has_animated_attr(doc, child_id, attribute.name.as_str()))
+        {
+            return;
+        }
+
+        let mut merged_attributes = child.attributes.clone();
+        for attribute in &group_attributes {
+            if let Some(existing) =
+                attribute_named_mut(merged_attributes.as_mut_slice(), attribute.name.as_str())
+            {
+                if attribute.name == "transform" {
+                    existing.value = format!("{} {}", attribute.value, existing.value);
+                } else if existing.value == "inherit" {
+                    existing.value.clone_from(&attribute.value);
+                    existing.quote = attribute.quote;
+                } else if !is_inheritable_attr(attribute.name.as_str())
+                    && existing.value != attribute.value
+                {
+                    return;
+                }
+            } else {
+                merged_attributes.push(attribute.clone());
+            }
+        }
+        merged_attributes
+    };
+
+    let NodeKind::Element(group) = &mut doc.node_mut(group_id).kind else {
+        return;
+    };
+    group.attributes.clear();
+
+    let NodeKind::Element(child) = &mut doc.node_mut(child_id).kind else {
+        return;
+    };
+    child.attributes = can_merge;
 }
 
 fn remove_empty_containers(doc: &mut Document) {
@@ -849,7 +968,7 @@ fn should_remove_empty_container(
         return false;
     }
 
-    if name == "g" && group_may_render(element.attributes.as_slice(), stylesheet) {
+    if name == "g" && element_has_filter(element.attributes.as_slice(), stylesheet) {
         return false;
     }
 
@@ -864,7 +983,7 @@ fn is_path_element(name: &str) -> bool {
     matches!(name, "glyph" | "missing-glyph" | "path")
 }
 
-fn group_may_render(attributes: &[Attribute], stylesheet: &FilterStylesheet) -> bool {
+fn element_has_filter(attributes: &[Attribute], stylesheet: &FilterStylesheet) -> bool {
     if attribute_value(attributes, "filter").is_some() {
         return true;
     }
@@ -1099,6 +1218,59 @@ fn is_reference_property(name: &str) -> bool {
             | "stroke"
             | "style"
     )
+}
+
+fn has_animated_attr(doc: &Document, node_id: usize, name: &str) -> bool {
+    let NodeKind::Element(element) = &doc.node(node_id).kind else {
+        return false;
+    };
+    if is_animation_element(element.name.as_str())
+        && attribute_value(element.attributes.as_slice(), "attributeName") == Some(name)
+    {
+        return true;
+    }
+    for child_id in doc.children(node_id) {
+        if has_animated_attr(doc, child_id, name) {
+            return true;
+        }
+    }
+    false
+}
+
+fn is_animation_element(name: &str) -> bool {
+    matches!(
+        name,
+        "animate" | "animateColor" | "animateMotion" | "animateTransform" | "set"
+    )
+}
+
+fn group_has_animation_children(doc: &Document, group_id: usize) -> bool {
+    doc.children(group_id)
+        .any(|child_id| match &doc.node(child_id).kind {
+            NodeKind::Element(child) => is_animation_element(child.name.as_str()),
+            _ => false,
+        })
+}
+
+fn replace_node_with_children(doc: &mut Document, node_id: usize) {
+    let Some(parent_id) = doc.node(node_id).parent else {
+        return;
+    };
+    let parent_children: Vec<_> = doc.children(parent_id).collect();
+    let replacement_children: Vec<_> = doc.children(node_id).collect();
+    let mut reordered = Vec::with_capacity(parent_children.len() + replacement_children.len());
+    for child_id in parent_children {
+        if child_id == node_id {
+            reordered.extend(replacement_children.iter().copied());
+        } else {
+            reordered.push(child_id);
+        }
+    }
+    doc.reorder_children(parent_id, &reordered);
+    doc.node_mut(node_id).parent = None;
+    doc.node_mut(node_id).first_child = None;
+    doc.node_mut(node_id).last_child = None;
+    doc.node_mut(node_id).next_sibling = None;
 }
 
 fn collapse_attribute_newlines(value: &str) -> String {

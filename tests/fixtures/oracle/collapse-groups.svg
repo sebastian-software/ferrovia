@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <g>
+    <g fill="red" transform="scale(2)">
+      <path d="M0 0" transform="rotate(5)"/>
+    </g>
+  </g>
+  <g>
+    <animate attributeName="opacity"/>
+    <path d="M1 1"/>
+  </g>
+  <g class="keep">
+    <path d="M2 2"/>
+  </g>
+  <style>.keep{filter:url(#fx)}</style>
+</svg>
