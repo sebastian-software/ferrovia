@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use crate::ast::{Document, NodeKind};
+use crate::ast::{Attribute, Document, NodeKind, QuoteStyle};
 use crate::config::{Config, PluginSpec};
 use crate::error::{FerroviaError, Result};
 
@@ -21,7 +21,9 @@ pub fn apply_plugins(doc: &mut Document, config: &Config) -> Result<()> {
             "removeComments" => remove_comments(doc, params.as_ref()),
             "removeMetadata" => remove_elements(doc, "metadata"),
             "removeTitle" => remove_elements(doc, "title"),
-            "removeDesc" => remove_elements(doc, "desc"),
+            "removeDesc" => remove_desc(doc, params.as_ref()),
+            "removeDimensions" => remove_dimensions(doc),
+            "removeXMLNS" => remove_xmlns(doc),
             other => return Err(FerroviaError::UnsupportedPlugin(other.to_string())),
         }
     }
@@ -89,6 +91,103 @@ fn remove_elements(doc: &mut Document, name: &str) {
         doc,
         |kind| matches!(kind, NodeKind::Element(element) if element.name == name),
     );
+}
+
+fn remove_desc(doc: &mut Document, params: Option<&Value>) {
+    let remove_any = params
+        .and_then(|value| value.get("removeAny"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+
+    let mut ids = Vec::new();
+    for (id, node) in doc.nodes.iter().enumerate().skip(1) {
+        let NodeKind::Element(element) = &node.kind else {
+            continue;
+        };
+        if element.name != "desc" {
+            continue;
+        }
+        if remove_any || desc_is_removable(doc, id) {
+            ids.push(id);
+        }
+    }
+    for id in ids {
+        detach_node(doc, id);
+    }
+}
+
+fn desc_is_removable(doc: &Document, id: usize) -> bool {
+    let mut text = String::new();
+    for child in doc.children(id) {
+        match &doc.node(child).kind {
+            NodeKind::Text(value) => text.push_str(value),
+            _ => return false,
+        }
+    }
+    let normalized = text.trim();
+    normalized.is_empty()
+        || normalized.contains("Created with")
+        || normalized.contains("Created using")
+        || normalized.contains("Generator:")
+}
+
+fn remove_dimensions(doc: &mut Document) {
+    let Some(root_id) = find_root_svg(doc) else {
+        return;
+    };
+    let NodeKind::Element(element) = &mut doc.node_mut(root_id).kind else {
+        return;
+    };
+
+    let mut width = None;
+    let mut height = None;
+    let mut view_box_exists = false;
+    element
+        .attributes
+        .retain(|attribute| match attribute.name.as_str() {
+            "width" => {
+                width = Some(attribute.value.clone());
+                false
+            }
+            "height" => {
+                height = Some(attribute.value.clone());
+                false
+            }
+            "viewBox" => {
+                view_box_exists = true;
+                true
+            }
+            _ => true,
+        });
+
+    if !view_box_exists && let (Some(width), Some(height)) = (width, height) {
+        element.attributes.push(Attribute {
+            name: "viewBox".to_string(),
+            value: format!("0 0 {width} {height}"),
+            quote: QuoteStyle::Double,
+        });
+    }
+}
+
+fn remove_xmlns(doc: &mut Document) {
+    let Some(root_id) = find_root_svg(doc) else {
+        return;
+    };
+    let NodeKind::Element(element) = &mut doc.node_mut(root_id).kind else {
+        return;
+    };
+    element
+        .attributes
+        .retain(|attribute| attribute.name.as_str() != "xmlns");
+}
+
+fn find_root_svg(doc: &Document) -> Option<usize> {
+    doc.children(doc.root_id()).find(|id| {
+        matches!(
+            &doc.node(*id).kind,
+            NodeKind::Element(element) if element.name == "svg"
+        )
+    })
 }
 
 fn matches_doctype(kind: &NodeKind) -> bool {

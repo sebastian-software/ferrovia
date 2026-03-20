@@ -51,9 +51,28 @@ fn removes_supported_structural_nodes() {
 
 #[test]
 fn matches_svgo_oracle_for_supported_fixture() {
+    assert_oracle_fixture("remove-comments");
+}
+
+#[test]
+fn matches_svgo_oracle_for_remove_desc_empty() {
+    assert_oracle_fixture("remove-desc-empty");
+}
+
+#[test]
+fn matches_svgo_oracle_for_remove_dimensions() {
+    assert_oracle_fixture("remove-dimensions");
+}
+
+#[test]
+fn matches_svgo_oracle_for_remove_xmlns() {
+    assert_oracle_fixture("remove-xmlns");
+}
+
+fn assert_oracle_fixture(name: &str) {
     let root = workspace_root();
-    let svg_path = root.join("tests/fixtures/oracle/remove-comments.svg");
-    let config_path = root.join("tests/fixtures/oracle/remove-comments.config.json");
+    let svg_path = root.join(format!("tests/fixtures/oracle/{name}.svg"));
+    let config_path = root.join(format!("tests/fixtures/oracle/{name}.config.json"));
     let node_modules = root.join("node_modules/svgo");
 
     if !node_modules.exists() {
