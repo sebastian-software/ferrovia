@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
+description = "Core SVG optimizer library for the ferrovia SVGO-compatible Rust port"
 
 [dependencies]
 memchr.workspace = true
@@ -14,4 +15,3 @@ thiserror.workspace = true
 
 [lints]
 workspace = true
-

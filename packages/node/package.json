@@ -1,6 +1,17 @@
 {
   "name": "ferrovia-node",
   "version": "0.1.0",
+  "description": "Node.js bindings for ferrovia, a SVGO-compatible SVG optimizer written in Rust",
+  "author": "Sebastian Werner <s.werner@sebastian-software.de>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sebastian-software/ferrovia.git"
+  },
+  "bugs": {
+    "url": "https://github.com/sebastian-software/ferrovia/issues"
+  },
+  "homepage": "https://github.com/sebastian-software/ferrovia#readme",
   "type": "module",
   "main": "./index.mjs",
   "exports": {

@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
+description = "N-API bindings for the ferrovia SVGO-compatible Rust port"
 
 [lib]
 crate-type = ["cdylib"]
@@ -20,4 +21,3 @@ napi-build.workspace = true
 
 [lints]
 workspace = true
-
