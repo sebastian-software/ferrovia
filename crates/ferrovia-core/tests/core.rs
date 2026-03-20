@@ -89,6 +89,11 @@ fn matches_svgo_oracle_for_collapse_groups() {
     assert_oracle_fixture("collapse-groups");
 }
 
+#[test]
+fn matches_svgo_oracle_for_cleanup_enable_background() {
+    assert_oracle_fixture("cleanup-enable-background");
+}
+
 fn assert_oracle_fixture(name: &str) {
     let root = workspace_root();
     let svg_path = root.join(format!("tests/fixtures/oracle/{name}.svg"));
@@ -252,5 +257,35 @@ fn collapse_groups_merges_single_child_group_when_safe() {
     assert_eq!(
         result.data,
         r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0" transform="scale(2) rotate(5)" fill="red"/></svg>"#
+    );
+}
+
+#[test]
+fn cleanup_enable_background_removes_attr_and_style_without_filters() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" enable-background="new 0 0 10 10" style="enable-background:new 0 0 10 10;fill:red"><rect width="10" height="10"/></svg>"#;
+    let config = Config {
+        plugins: vec![PluginSpec::Name("cleanupEnableBackground".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg" style="fill:red"><rect width="10" height="10"/></svg>"#
+    );
+}
+
+#[test]
+fn cleanup_enable_background_keeps_new_for_mask_with_matching_dimensions() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><filter id="fx"/><mask width="10" height="10" enable-background="new 0 0 10 10" style="fill:red;enable-background:new 0 0 10 10"/></svg>"#;
+    let config = Config {
+        plugins: vec![PluginSpec::Name("cleanupEnableBackground".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><filter id="fx"/><mask width="10" height="10" enable-background="new" style="fill:red;enable-background:new"/></svg>"#
     );
 }

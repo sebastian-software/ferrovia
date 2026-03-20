@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" enable-background="new 0 0 10 10" style="fill:red;enable-background:new 0 0 10 10">
+  <filter id="fx"/>
+  <mask width="10" height="10" enable-background="new 0 0 10 10" style="fill:blue;enable-background:new 0 0 10 10"/>
+  <pattern width="10" height="10" enable-background="new 0 0 10 10"/>
+</svg>

@@ -15,6 +15,7 @@ const PRESET_DEFAULT: &[&str] = &[
     "removeEditorsNSData",
     "cleanupAttrs",
     "removeUselessDefs",
+    "cleanupEnableBackground",
     "removeEmptyText",
     "moveElemsAttrsToGroup",
     "moveGroupAttrsToElems",
@@ -45,6 +46,7 @@ pub fn apply_plugins(doc: &mut Document, config: &Config) -> Result<()> {
             "removeEditorsNSData" => remove_editors_ns_data(doc, params.as_ref()),
             "cleanupAttrs" => cleanup_attrs(doc, params.as_ref()),
             "removeUselessDefs" => remove_useless_defs(doc),
+            "cleanupEnableBackground" => cleanup_enable_background(doc),
             "removeEmptyText" => remove_empty_text(doc, params.as_ref()),
             "moveElemsAttrsToGroup" => move_elems_attrs_to_group(doc),
             "moveGroupAttrsToElems" => move_group_attrs_to_elems(doc),
@@ -204,6 +206,104 @@ fn remove_elements(doc: &mut Document, name: &str) {
         doc,
         |kind| matches!(kind, NodeKind::Element(element) if element.name == name),
     );
+}
+
+fn cleanup_enable_background(doc: &mut Document) {
+    let has_filter = doc
+        .nodes
+        .iter()
+        .any(|node| matches!(&node.kind, NodeKind::Element(element) if element.name == "filter"));
+
+    for node in &mut doc.nodes {
+        let NodeKind::Element(element) = &mut node.kind else {
+            continue;
+        };
+
+        let mut style_declarations = attribute_value(element.attributes.as_slice(), "style")
+            .map(parse_style_declarations)
+            .unwrap_or_default();
+        dedupe_declarations(&mut style_declarations, "enable-background");
+
+        if !has_filter {
+            element
+                .attributes
+                .retain(|attribute| attribute.name != "enable-background");
+            remove_declarations(&mut style_declarations, "enable-background");
+            update_style_attribute(&mut element.attributes, &style_declarations);
+            continue;
+        }
+
+        let width = attribute_value(element.attributes.as_slice(), "width").map(str::to_string);
+        let height = attribute_value(element.attributes.as_slice(), "height").map(str::to_string);
+        let has_dimensions = width.is_some() && height.is_some();
+        if !matches!(element.name.as_str(), "svg" | "mask" | "pattern") || !has_dimensions {
+            update_style_attribute(&mut element.attributes, &style_declarations);
+            continue;
+        }
+
+        let width = width.unwrap_or_default();
+        let height = height.unwrap_or_default();
+
+        if let Some(attribute) =
+            attribute_named_mut(element.attributes.as_mut_slice(), "enable-background")
+        {
+            match cleanup_enable_background_value(
+                attribute.value.as_str(),
+                element.name.as_str(),
+                width.as_str(),
+                height.as_str(),
+            ) {
+                Some(cleaned) => attribute.value = cleaned,
+                None => attribute.value.clear(),
+            }
+        }
+        element.attributes.retain(|attribute| {
+            attribute.name != "enable-background" || !attribute.value.is_empty()
+        });
+
+        if let Some(index) = style_declarations
+            .iter()
+            .rposition(|declaration| declaration.name == "enable-background")
+        {
+            let current = style_declarations[index].value.clone();
+            match cleanup_enable_background_value(
+                current.as_str(),
+                element.name.as_str(),
+                width.as_str(),
+                height.as_str(),
+            ) {
+                Some(cleaned) => style_declarations[index].value = cleaned,
+                None => {
+                    style_declarations.remove(index);
+                }
+            }
+        }
+
+        update_style_attribute(&mut element.attributes, &style_declarations);
+    }
+}
+
+fn cleanup_enable_background_value(
+    value: &str,
+    node_name: &str,
+    width: &str,
+    height: &str,
+) -> Option<String> {
+    let parts: Vec<_> = value.split_whitespace().collect();
+    if parts.len() == 5
+        && parts[0] == "new"
+        && parts[1] == "0"
+        && parts[2] == "0"
+        && parts[3] == width
+        && parts[4] == height
+    {
+        return if node_name == "svg" {
+            None
+        } else {
+            Some("new".to_string())
+        };
+    }
+    Some(value.to_string())
 }
 
 fn move_group_attrs_to_elems(doc: &mut Document) {
@@ -1151,6 +1251,76 @@ fn value_references_any_id(value: &str, ids: &HashSet<String>) -> bool {
 
 fn includes_url_reference(value: &str) -> bool {
     value.contains("url(") && value.contains('#')
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StyleDeclaration {
+    name: String,
+    value: String,
+}
+
+fn parse_style_declarations(style: &str) -> Vec<StyleDeclaration> {
+    style
+        .split(';')
+        .filter_map(|declaration| {
+            let (name, value) = declaration.split_once(':')?;
+            let name = name.trim();
+            let value = value.trim();
+            if name.is_empty() || value.is_empty() {
+                return None;
+            }
+            Some(StyleDeclaration {
+                name: name.to_string(),
+                value: value.to_string(),
+            })
+        })
+        .collect()
+}
+
+fn serialize_style_declarations(declarations: &[StyleDeclaration]) -> String {
+    declarations
+        .iter()
+        .map(|declaration| format!("{}:{}", declaration.name, declaration.value))
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+fn dedupe_declarations(declarations: &mut Vec<StyleDeclaration>, name: &str) {
+    let mut keep_index = declarations
+        .iter()
+        .enumerate()
+        .rev()
+        .find_map(|(index, declaration)| (declaration.name == name).then_some(index));
+    if keep_index.is_none() {
+        return;
+    }
+    let keep_index = keep_index.take().unwrap_or_default();
+    let mut index = 0;
+    declarations.retain(|declaration| {
+        let keep = declaration.name != name || index == keep_index;
+        index += 1;
+        keep
+    });
+}
+
+fn remove_declarations(declarations: &mut Vec<StyleDeclaration>, name: &str) {
+    declarations.retain(|declaration| declaration.name != name);
+}
+
+fn update_style_attribute(attributes: &mut Vec<Attribute>, declarations: &[StyleDeclaration]) {
+    let serialized = if declarations.is_empty() {
+        None
+    } else {
+        Some(serialize_style_declarations(declarations))
+    };
+    let style_index = attributes
+        .iter()
+        .position(|attribute| attribute.name == "style");
+    match (style_index, serialized) {
+        (Some(index), Some(value)) => attributes[index].value = value,
+        (Some(_), None) => attributes.retain(|attribute| attribute.name != "style"),
+        (None, Some(_) | None) => {}
+    }
 }
 
 fn is_inheritable_attr(name: &str) -> bool {
