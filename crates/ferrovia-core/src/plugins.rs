@@ -5,6 +5,9 @@ use serde_json::Value;
 use crate::ast::{Attribute, Document, NodeKind, QuoteStyle};
 use crate::config::{Config, PluginSpec};
 use crate::error::{FerroviaError, Result};
+use crate::style::{
+    dedupe_declarations, parse_style_declarations, remove_declarations, update_style_attribute,
+};
 
 const PRESET_DEFAULT: &[&str] = &[
     "removeDoctype",
@@ -1489,76 +1492,6 @@ fn value_references_any_id(value: &str, ids: &HashSet<String>) -> bool {
 
 fn includes_url_reference(value: &str) -> bool {
     value.contains("url(") && value.contains('#')
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct StyleDeclaration {
-    name: String,
-    value: String,
-}
-
-fn parse_style_declarations(style: &str) -> Vec<StyleDeclaration> {
-    style
-        .split(';')
-        .filter_map(|declaration| {
-            let (name, value) = declaration.split_once(':')?;
-            let name = name.trim();
-            let value = value.trim();
-            if name.is_empty() || value.is_empty() {
-                return None;
-            }
-            Some(StyleDeclaration {
-                name: name.to_string(),
-                value: value.to_string(),
-            })
-        })
-        .collect()
-}
-
-fn serialize_style_declarations(declarations: &[StyleDeclaration]) -> String {
-    declarations
-        .iter()
-        .map(|declaration| format!("{}:{}", declaration.name, declaration.value))
-        .collect::<Vec<_>>()
-        .join(";")
-}
-
-fn dedupe_declarations(declarations: &mut Vec<StyleDeclaration>, name: &str) {
-    let mut keep_index = declarations
-        .iter()
-        .enumerate()
-        .rev()
-        .find_map(|(index, declaration)| (declaration.name == name).then_some(index));
-    if keep_index.is_none() {
-        return;
-    }
-    let keep_index = keep_index.take().unwrap_or_default();
-    let mut index = 0;
-    declarations.retain(|declaration| {
-        let keep = declaration.name != name || index == keep_index;
-        index += 1;
-        keep
-    });
-}
-
-fn remove_declarations(declarations: &mut Vec<StyleDeclaration>, name: &str) {
-    declarations.retain(|declaration| declaration.name != name);
-}
-
-fn update_style_attribute(attributes: &mut Vec<Attribute>, declarations: &[StyleDeclaration]) {
-    let serialized = if declarations.is_empty() {
-        None
-    } else {
-        Some(serialize_style_declarations(declarations))
-    };
-    let style_index = attributes
-        .iter()
-        .position(|attribute| attribute.name == "style");
-    match (style_index, serialized) {
-        (Some(index), Some(value)) => attributes[index].value = value,
-        (Some(_), None) => attributes.retain(|attribute| attribute.name != "style"),
-        (None, Some(_) | None) => {}
-    }
 }
 
 fn node_element(doc: &Document, node_id: usize) -> Option<&crate::ast::Element> {

@@ -11,7 +11,10 @@ description = "Core SVG optimizer library for the ferrovia SVGO-compatible Rust 
 memchr.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+simplecss.workspace = true
+svgtypes.workspace = true
 thiserror.workspace = true
+xmlparser.workspace = true
 
 [lints]
 workspace = true
