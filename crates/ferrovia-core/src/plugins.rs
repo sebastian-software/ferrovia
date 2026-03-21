@@ -16,6 +16,7 @@ const PRESET_DEFAULT: &[&str] = &[
     "cleanupAttrs",
     "removeUselessDefs",
     "removeNonInheritableGroupAttrs",
+    "removeUselessStrokeAndFill",
     "cleanupEnableBackground",
     "removeEmptyText",
     "moveElemsAttrsToGroup",
@@ -48,6 +49,7 @@ pub fn apply_plugins(doc: &mut Document, config: &Config) -> Result<()> {
             "cleanupAttrs" => cleanup_attrs(doc, params.as_ref()),
             "removeUselessDefs" => remove_useless_defs(doc),
             "removeNonInheritableGroupAttrs" => remove_non_inheritable_group_attrs(doc),
+            "removeUselessStrokeAndFill" => remove_useless_stroke_and_fill(doc, params.as_ref()),
             "cleanupEnableBackground" => cleanup_enable_background(doc),
             "removeEmptyText" => remove_empty_text(doc, params.as_ref()),
             "moveElemsAttrsToGroup" => move_elems_attrs_to_group(doc),
@@ -321,6 +323,224 @@ fn remove_non_inheritable_group_attrs(doc: &mut Document) {
                 || is_inheritable_attr(attribute.name.as_str())
                 || is_preserved_group_presentation_attr(attribute.name.as_str())
         });
+    }
+}
+
+fn remove_useless_stroke_and_fill(doc: &mut Document, params: Option<&Value>) {
+    if document_has_style_or_scripts(doc) {
+        return;
+    }
+
+    let options = PaintCleanupOptions::from_params(params);
+    let root_children: Vec<_> = doc.children(doc.root_id()).collect();
+    for child_id in root_children {
+        traverse_paint_cleanup(doc, child_id, None, options);
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PaintCleanupOptions {
+    remove_stroke: bool,
+    remove_fill: bool,
+    remove_none: bool,
+}
+
+impl PaintCleanupOptions {
+    fn from_params(params: Option<&Value>) -> Self {
+        Self {
+            remove_stroke: params
+                .and_then(|value| value.get("stroke"))
+                .and_then(Value::as_bool)
+                .unwrap_or(true),
+            remove_fill: params
+                .and_then(|value| value.get("fill"))
+                .and_then(Value::as_bool)
+                .unwrap_or(true),
+            remove_none: params
+                .and_then(|value| value.get("removeNone"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct PaintStyle {
+    stroke: Option<String>,
+    stroke_opacity: Option<String>,
+    stroke_width: Option<String>,
+    marker_end: Option<String>,
+    fill: Option<String>,
+    fill_opacity: Option<String>,
+}
+
+fn traverse_paint_cleanup(
+    doc: &mut Document,
+    node_id: usize,
+    parent_style: Option<&PaintStyle>,
+    options: PaintCleanupOptions,
+) {
+    let current_style = compute_paint_style(doc, node_id, parent_style);
+    let Some(element_name) = node_element_name(doc, node_id).map(str::to_string) else {
+        return;
+    };
+
+    if node_has_id(doc, node_id) {
+        return;
+    }
+
+    if is_shape_element(element_name.as_str()) {
+        cleanup_shape_paint(doc, node_id, &current_style, parent_style, options);
+        if doc.node(node_id).parent.is_none() {
+            return;
+        }
+    }
+
+    let child_ids: Vec<_> = doc.children(node_id).collect();
+    for child_id in child_ids {
+        traverse_paint_cleanup(doc, child_id, Some(&current_style), options);
+    }
+}
+
+fn cleanup_shape_paint(
+    doc: &mut Document,
+    node_id: usize,
+    current_style: &PaintStyle,
+    parent_style: Option<&PaintStyle>,
+    options: PaintCleanupOptions,
+) {
+    let parent_stroke = parent_style.and_then(|style| style.stroke.as_deref());
+
+    if options.remove_stroke
+        && (current_style.stroke.is_none()
+            || current_style.stroke.as_deref() == Some("none")
+            || current_style.stroke_opacity.as_deref() == Some("0")
+            || current_style.stroke_width.as_deref() == Some("0"))
+        && (current_style.stroke_width.as_deref() == Some("0")
+            || current_style.marker_end.is_none())
+    {
+        let NodeKind::Element(element) = &mut doc.node_mut(node_id).kind else {
+            return;
+        };
+        element
+            .attributes
+            .retain(|attribute| !attribute.name.starts_with("stroke"));
+        if parent_stroke.is_some_and(|stroke| stroke != "none") {
+            element.attributes.push(Attribute {
+                name: "stroke".to_string(),
+                value: "none".to_string(),
+                quote: QuoteStyle::Double,
+            });
+        }
+    }
+
+    if options.remove_fill
+        && (current_style.fill.as_deref() == Some("none")
+            || current_style.fill_opacity.as_deref() == Some("0"))
+    {
+        let NodeKind::Element(element) = &mut doc.node_mut(node_id).kind else {
+            return;
+        };
+        element
+            .attributes
+            .retain(|attribute| !attribute.name.starts_with("fill-"));
+        if current_style.fill.as_deref() != Some("none") {
+            set_or_push_attribute(&mut element.attributes, "fill", "none", QuoteStyle::Double);
+        }
+    }
+
+    if options.remove_none {
+        let stroke_none = current_style.stroke.is_none()
+            || attribute_value(
+                doc.node(node_id).kind.element_attributes().as_slice(),
+                "stroke",
+            ) == Some("none");
+        let fill_none = current_style.fill.as_deref() == Some("none")
+            || attribute_value(
+                doc.node(node_id).kind.element_attributes().as_slice(),
+                "fill",
+            ) == Some("none");
+        if stroke_none && fill_none {
+            detach_node(doc, node_id);
+        }
+    }
+}
+
+fn compute_paint_style(
+    doc: &Document,
+    node_id: usize,
+    parent_style: Option<&PaintStyle>,
+) -> PaintStyle {
+    let Some(element) = node_element(doc, node_id) else {
+        return parent_style.cloned().unwrap_or_default();
+    };
+    let inline_style = attribute_value(element.attributes.as_slice(), "style")
+        .map(parse_style_declarations)
+        .unwrap_or_default();
+
+    let mut style = PaintStyle {
+        stroke: parent_style.and_then(|parent| parent.stroke.clone()),
+        stroke_opacity: parent_style.and_then(|parent| parent.stroke_opacity.clone()),
+        stroke_width: parent_style.and_then(|parent| parent.stroke_width.clone()),
+        marker_end: parent_style.and_then(|parent| parent.marker_end.clone()),
+        fill: parent_style.and_then(|parent| parent.fill.clone()),
+        fill_opacity: parent_style.and_then(|parent| parent.fill_opacity.clone()),
+    };
+
+    apply_paint_style_value(
+        &mut style,
+        "stroke",
+        attribute_value(element.attributes.as_slice(), "stroke"),
+    );
+    apply_paint_style_value(
+        &mut style,
+        "stroke-opacity",
+        attribute_value(element.attributes.as_slice(), "stroke-opacity"),
+    );
+    apply_paint_style_value(
+        &mut style,
+        "stroke-width",
+        attribute_value(element.attributes.as_slice(), "stroke-width"),
+    );
+    apply_paint_style_value(
+        &mut style,
+        "marker-end",
+        attribute_value(element.attributes.as_slice(), "marker-end"),
+    );
+    apply_paint_style_value(
+        &mut style,
+        "fill",
+        attribute_value(element.attributes.as_slice(), "fill"),
+    );
+    apply_paint_style_value(
+        &mut style,
+        "fill-opacity",
+        attribute_value(element.attributes.as_slice(), "fill-opacity"),
+    );
+
+    for declaration in &inline_style {
+        apply_paint_style_value(
+            &mut style,
+            declaration.name.as_str(),
+            Some(declaration.value.as_str()),
+        );
+    }
+
+    style
+}
+
+fn apply_paint_style_value(style: &mut PaintStyle, name: &str, value: Option<&str>) {
+    let Some(value) = value else {
+        return;
+    };
+    match name {
+        "stroke" => style.stroke = Some(value.to_string()),
+        "stroke-opacity" => style.stroke_opacity = Some(value.to_string()),
+        "stroke-width" => style.stroke_width = Some(value.to_string()),
+        "marker-end" => style.marker_end = Some(value.to_string()),
+        "fill" => style.fill = Some(value.to_string()),
+        "fill-opacity" => style.fill_opacity = Some(value.to_string()),
+        _ => {}
     }
 }
 
@@ -1339,6 +1559,82 @@ fn update_style_attribute(attributes: &mut Vec<Attribute>, declarations: &[Style
         (Some(_), None) => attributes.retain(|attribute| attribute.name != "style"),
         (None, Some(_) | None) => {}
     }
+}
+
+fn node_element(doc: &Document, node_id: usize) -> Option<&crate::ast::Element> {
+    match &doc.node(node_id).kind {
+        NodeKind::Element(element) => Some(element),
+        _ => None,
+    }
+}
+
+fn node_element_name(doc: &Document, node_id: usize) -> Option<&str> {
+    node_element(doc, node_id).map(|element| element.name.as_str())
+}
+
+fn node_has_id(doc: &Document, node_id: usize) -> bool {
+    node_element(doc, node_id)
+        .and_then(|element| attribute_value(element.attributes.as_slice(), "id"))
+        .is_some()
+}
+
+fn set_or_push_attribute(
+    attributes: &mut Vec<Attribute>,
+    name: &str,
+    value: &str,
+    quote: QuoteStyle,
+) {
+    if let Some(attribute) = attribute_named_mut(attributes.as_mut_slice(), name) {
+        attribute.value.clear();
+        attribute.value.push_str(value);
+        attribute.quote = quote;
+    } else {
+        attributes.push(Attribute {
+            name: name.to_string(),
+            value: value.to_string(),
+            quote,
+        });
+    }
+}
+
+fn document_has_style_or_scripts(doc: &Document) -> bool {
+    doc.nodes.iter().enumerate().skip(1).any(|(node_id, node)| {
+        let NodeKind::Element(element) = &node.kind else {
+            return false;
+        };
+        element.name == "style" || element_has_scripts(doc, node_id)
+    })
+}
+
+fn element_has_scripts(doc: &Document, node_id: usize) -> bool {
+    let Some(element) = node_element(doc, node_id) else {
+        return false;
+    };
+
+    if element.name == "script" && doc.node(node_id).first_child.is_some() {
+        return true;
+    }
+
+    if element.name == "a"
+        && element.attributes.iter().any(|attribute| {
+            (attribute.name == "href" || attribute.name.ends_with(":href"))
+                && attribute.value.trim_start().starts_with("javascript:")
+        })
+    {
+        return true;
+    }
+
+    element
+        .attributes
+        .iter()
+        .any(|attribute| attribute.name.starts_with("on"))
+}
+
+fn is_shape_element(name: &str) -> bool {
+    matches!(
+        name,
+        "circle" | "ellipse" | "line" | "path" | "polygon" | "polyline" | "rect"
+    )
 }
 
 fn is_inheritable_attr(name: &str) -> bool {

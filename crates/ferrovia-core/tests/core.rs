@@ -99,6 +99,11 @@ fn matches_svgo_oracle_for_remove_non_inheritable_group_attrs() {
     assert_oracle_fixture("remove-non-inheritable-group-attrs");
 }
 
+#[test]
+fn matches_svgo_oracle_for_remove_useless_stroke_and_fill() {
+    assert_oracle_fixture("remove-useless-stroke-and-fill");
+}
+
 fn assert_oracle_fixture(name: &str) {
     let root = workspace_root();
     let svg_path = root.join(format!("tests/fixtures/oracle/{name}.svg"));
@@ -310,4 +315,36 @@ fn remove_non_inheritable_group_attrs_preserves_inheritable_and_group_specific_a
         result.data,
         r#"<svg xmlns="http://www.w3.org/2000/svg"><g fill="red" opacity="0.5"><path d="M0 0"/></g></svg>"#
     );
+}
+
+#[test]
+fn remove_useless_stroke_and_fill_deoptimizes_when_style_exists() {
+    let svg = concat!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><style>.x"#,
+        "{stroke:none}",
+        r#"</style><path class="x" d="M0 0" stroke="red" stroke-width="0" fill="none"/></svg>"#
+    );
+    let config = Config {
+        plugins: vec![PluginSpec::Name("removeUselessStrokeAndFill".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(result.data, svg);
+}
+
+#[test]
+fn remove_useless_stroke_and_fill_removes_shape_when_remove_none_is_enabled() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0" fill="none"/></svg>"#;
+    let config = Config {
+        plugins: vec![PluginSpec::Configured(PluginConfig {
+            name: "removeUselessStrokeAndFill".to_string(),
+            params: Some(json!({ "removeNone": true })),
+            enabled: true,
+        })],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(result.data, r#"<svg xmlns="http://www.w3.org/2000/svg"/>"#);
 }
