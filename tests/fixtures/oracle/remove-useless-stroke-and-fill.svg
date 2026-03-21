@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <g stroke="blue">
+    <path d="M0 0" stroke="red" stroke-width="0" fill="none"/>
+    <path id="keep" d="M1 1" stroke="red" stroke-width="0" fill="none"/>
+    <path d="M2 2" stroke="red" stroke-width="0" marker-end="url(#m)" fill="none"/>
+    <path d="M3 3" fill="none" fill-opacity="0"/>
+  </g>
+</svg>

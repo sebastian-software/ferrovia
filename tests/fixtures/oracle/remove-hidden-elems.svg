@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <g visibility="hidden">
+    <path d="M0 0"/>
+  </g>
+  <g visibility="hidden">
+    <g visibility="visible">
+      <rect width="10" height="10"/>
+    </g>
+  </g>
+  <marker id="keep-marker" display="none">
+    <path d="M0 0"/>
+  </marker>
+  <circle r="0"/>
+  <ellipse rx="0" ry="5"/>
+  <rect width="0" height="10"/>
+  <pattern width="0" height="10"/>
+  <image width="10" height="0" href="image.png"/>
+  <path d=""/>
+  <polyline points=""/>
+  <polygon points=""/>
+</svg>
