@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <g transform="translate(10 0) translate(5 0) scale(2 2) rotate(0) skewX(0)">
+    <path d="M0 0"/>
+  </g>
+  <linearGradient id="gradient" gradientTransform="translate(0 0) scale(2 2)"/>
+  <pattern id="pattern" patternTransform="translate(10 20) rotate(90) translate(-10 -20)"/>
+</svg>

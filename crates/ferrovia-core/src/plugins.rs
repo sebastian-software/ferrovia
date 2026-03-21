@@ -5,6 +5,7 @@ use serde_json::Value;
 use crate::ast::{Attribute, Document, NodeKind, QuoteStyle};
 use crate::config::{Config, PluginSpec};
 use crate::error::{FerroviaError, Result};
+use crate::geometry::{TransformOperation, parse_transform_operations};
 use crate::style::{
     dedupe_declarations, parse_style_declarations, remove_declarations, update_style_attribute,
 };
@@ -22,6 +23,7 @@ const PRESET_DEFAULT: &[&str] = &[
     "removeUselessStrokeAndFill",
     "cleanupEnableBackground",
     "removeEmptyText",
+    "convertTransform",
     "moveElemsAttrsToGroup",
     "moveGroupAttrsToElems",
     "collapseGroups",
@@ -55,6 +57,7 @@ pub fn apply_plugins(doc: &mut Document, config: &Config) -> Result<()> {
             "removeUselessStrokeAndFill" => remove_useless_stroke_and_fill(doc, params.as_ref()),
             "cleanupEnableBackground" => cleanup_enable_background(doc),
             "removeEmptyText" => remove_empty_text(doc, params.as_ref()),
+            "convertTransform" => convert_transform(doc, params.as_ref()),
             "moveElemsAttrsToGroup" => move_elems_attrs_to_group(doc),
             "moveGroupAttrsToElems" => move_group_attrs_to_elems(doc),
             "collapseGroups" => collapse_groups(doc),
@@ -311,6 +314,814 @@ fn cleanup_enable_background_value(
         };
     }
     Some(value.to_string())
+}
+
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "SVGO convertTransform parameters are boolean-heavy by design"
+)]
+#[derive(Debug, Clone, Copy)]
+struct ConvertTransformParams {
+    convert_to_shorts: bool,
+    deg_precision: Option<usize>,
+    float_precision: usize,
+    transform_precision: usize,
+    matrix_to_transform: bool,
+    short_translate: bool,
+    short_scale: bool,
+    short_rotate: bool,
+    remove_useless: bool,
+    collapse_into_one: bool,
+    leading_zero: bool,
+    negative_extra_space: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct TransformItem {
+    name: &'static str,
+    data: Vec<f64>,
+}
+
+enum TransformRewrite {
+    KeepOriginal,
+    Remove,
+    Replace(String),
+}
+
+fn convert_transform(doc: &mut Document, params: Option<&Value>) {
+    let params = convert_transform_params(params);
+    for node_id in 1..doc.nodes.len() {
+        let NodeKind::Element(element) = &mut doc.node_mut(node_id).kind else {
+            continue;
+        };
+
+        for attribute_name in ["transform", "gradientTransform", "patternTransform"] {
+            let Some(attribute) =
+                attribute_named_mut(element.attributes.as_mut_slice(), attribute_name)
+            else {
+                continue;
+            };
+            match rewrite_transform(attribute.value.as_str(), params) {
+                TransformRewrite::KeepOriginal => {}
+                TransformRewrite::Remove => attribute.value.clear(),
+                TransformRewrite::Replace(value) => attribute.value = value,
+            }
+        }
+        element.attributes.retain(|attribute| {
+            !matches!(
+                attribute.name.as_str(),
+                "transform" | "gradientTransform" | "patternTransform"
+            ) || !attribute.value.is_empty()
+        });
+    }
+}
+
+fn convert_transform_params(params: Option<&Value>) -> ConvertTransformParams {
+    ConvertTransformParams {
+        convert_to_shorts: json_bool(params, "convertToShorts", true),
+        deg_precision: json_usize_opt(params, "degPrecision"),
+        float_precision: json_usize(params, "floatPrecision", 3),
+        transform_precision: json_usize(params, "transformPrecision", 5),
+        matrix_to_transform: json_bool(params, "matrixToTransform", true),
+        short_translate: json_bool(params, "shortTranslate", true),
+        short_scale: json_bool(params, "shortScale", true),
+        short_rotate: json_bool(params, "shortRotate", true),
+        remove_useless: json_bool(params, "removeUseless", true),
+        collapse_into_one: json_bool(params, "collapseIntoOne", true),
+        leading_zero: json_bool(params, "leadingZero", true),
+        negative_extra_space: json_bool(params, "negativeExtraSpace", false),
+    }
+}
+
+fn rewrite_transform(value: &str, params: ConvertTransformParams) -> TransformRewrite {
+    let Ok(mut transforms) = parse_transform_items(value) else {
+        return TransformRewrite::KeepOriginal;
+    };
+    if transforms.is_empty() {
+        return TransformRewrite::Remove;
+    }
+
+    let params = define_transform_precision(&transforms, params);
+
+    if params.collapse_into_one && transforms.len() > 1 {
+        transforms = vec![transforms_multiply(&transforms)];
+    }
+
+    if params.convert_to_shorts {
+        transforms = convert_to_shorts(transforms, params);
+    } else {
+        for transform in &mut transforms {
+            round_transform_item(transform, params);
+        }
+    }
+
+    if params.remove_useless {
+        transforms = remove_useless_transforms(transforms);
+    }
+
+    if transforms.is_empty() {
+        TransformRewrite::Remove
+    } else {
+        TransformRewrite::Replace(serialize_transforms(&transforms, params))
+    }
+}
+
+fn parse_transform_items(value: &str) -> std::result::Result<Vec<TransformItem>, String> {
+    parse_transform_operations(value).map(|operations| {
+        operations
+            .into_iter()
+            .map(|operation| match operation {
+                TransformOperation::Matrix { a, b, c, d, e, f } => TransformItem {
+                    name: "matrix",
+                    data: vec![a, b, c, d, e, f],
+                },
+                TransformOperation::Translate { tx, ty } => TransformItem {
+                    name: "translate",
+                    data: vec![tx, ty],
+                },
+                TransformOperation::Scale { sx, sy } => TransformItem {
+                    name: "scale",
+                    data: vec![sx, sy],
+                },
+                TransformOperation::Rotate { angle } => TransformItem {
+                    name: "rotate",
+                    data: vec![angle],
+                },
+                TransformOperation::SkewX { angle } => TransformItem {
+                    name: "skewX",
+                    data: vec![angle],
+                },
+                TransformOperation::SkewY { angle } => TransformItem {
+                    name: "skewY",
+                    data: vec![angle],
+                },
+            })
+            .collect()
+    })
+}
+
+#[expect(
+    clippy::useless_let_if_seq,
+    reason = "Port kept close to SVGO precision logic for easier parity review"
+)]
+#[expect(
+    clippy::redundant_closure_for_method_calls,
+    reason = "Port kept close to current Rust expression shape during spike"
+)]
+fn define_transform_precision(
+    transforms: &[TransformItem],
+    mut params: ConvertTransformParams,
+) -> ConvertTransformParams {
+    let matrix_values: Vec<_> = transforms
+        .iter()
+        .filter(|transform| transform.name == "matrix")
+        .flat_map(|transform| transform.data.iter().copied().take(4))
+        .collect();
+    let mut number_of_digits = params.transform_precision;
+
+    if !matrix_values.is_empty() {
+        let matrix_precision = matrix_values
+            .iter()
+            .map(|value| float_digits(*value))
+            .max()
+            .unwrap_or(params.transform_precision);
+        params.transform_precision = params.transform_precision.min(matrix_precision);
+        number_of_digits = matrix_values
+            .iter()
+            .map(|value| value.to_string().chars().filter(|ch| ch.is_ascii_digit()).count())
+            .max()
+            .unwrap_or(params.transform_precision);
+    }
+
+    if params.deg_precision.is_none() {
+        params.deg_precision = Some(params.float_precision.min(number_of_digits.saturating_sub(2)));
+    }
+
+    params
+}
+
+fn float_digits(value: f64) -> usize {
+    let text = value.to_string();
+    text.split_once('.').map_or(0, |(_, fraction)| fraction.len())
+}
+
+#[expect(
+    clippy::float_cmp,
+    reason = "Transform comparisons intentionally mirror SVGO semantics during the port"
+)]
+fn convert_to_shorts(
+    mut transforms: Vec<TransformItem>,
+    params: ConvertTransformParams,
+) -> Vec<TransformItem> {
+    let mut index = 0;
+    while index < transforms.len() {
+        if params.matrix_to_transform && transforms[index].name == "matrix" {
+            let decomposed = matrix_to_transform(transforms[index].clone(), params);
+            if serialize_transforms(&decomposed, params).len()
+                <= serialize_transforms(&[transforms[index].clone()], params).len()
+            {
+                transforms.splice(index..=index, decomposed);
+            }
+        }
+
+        round_transform_item(&mut transforms[index], params);
+
+        if params.short_translate
+            && transforms[index].name == "translate"
+            && transforms[index].data.len() == 2
+            && transforms[index].data[1] == 0.0
+        {
+            transforms[index].data.pop();
+        }
+
+        if params.short_scale
+            && transforms[index].name == "scale"
+            && transforms[index].data.len() == 2
+            && transforms[index].data[0] == transforms[index].data[1]
+        {
+            transforms[index].data.pop();
+        }
+
+        if params.short_rotate
+            && index >= 2
+            && transforms[index - 2].name == "translate"
+            && transforms[index - 1].name == "rotate"
+            && transforms[index].name == "translate"
+            && transforms[index - 2].data.len() == 2
+            && transforms[index].data.len() == 2
+            && transforms[index - 2].data[0] == -transforms[index].data[0]
+            && transforms[index - 2].data[1] == -transforms[index].data[1]
+        {
+            let rotate = TransformItem {
+                name: "rotate",
+                data: vec![
+                    transforms[index - 1].data[0],
+                    transforms[index - 2].data[0],
+                    transforms[index - 2].data[1],
+                ],
+            };
+            transforms.splice(index - 2..=index, [rotate]);
+            index = index.saturating_sub(2);
+            continue;
+        }
+
+        index += 1;
+    }
+
+    transforms
+}
+
+fn remove_useless_transforms(transforms: Vec<TransformItem>) -> Vec<TransformItem> {
+    transforms
+        .into_iter()
+        .filter(|transform| !is_identity_transform(transform))
+        .collect()
+}
+
+#[expect(
+    clippy::float_cmp,
+    reason = "Identity detection intentionally mirrors SVGO transform logic during the port"
+)]
+fn is_identity_transform(transform: &TransformItem) -> bool {
+    match transform.name {
+        "rotate" | "skewX" | "skewY" => transform.data.first().copied().unwrap_or_default() == 0.0,
+        "scale" => {
+            transform.data.first().copied().unwrap_or(1.0) == 1.0
+                && transform.data.get(1).copied().unwrap_or(1.0) == 1.0
+        }
+        "translate" => {
+            transform.data.first().copied().unwrap_or_default() == 0.0
+                && transform.data.get(1).copied().unwrap_or_default() == 0.0
+        }
+        "matrix" => transform.data == [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+        _ => false,
+    }
+}
+
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Ownership keeps the current port mechanically close to the SVGO helper flow"
+)]
+fn matrix_to_transform(
+    matrix: TransformItem,
+    params: ConvertTransformParams,
+) -> Vec<TransformItem> {
+    let mut shortest = vec![matrix.clone()];
+    let mut shortest_len = serialize_transforms(&shortest, params).len();
+    for decomposition in [decompose_qrab(&matrix), decompose_qrcd(&matrix)]
+        .into_iter()
+        .flatten()
+    {
+        let rounded: Vec<_> = decomposition
+            .iter()
+            .cloned()
+            .map(|mut item| {
+                round_transform_item(&mut item, params);
+                item
+            })
+            .collect();
+        let optimized = optimize_decomposition(&rounded, &decomposition);
+        let length = serialize_transforms(&optimized, params).len();
+        if length < shortest_len {
+            shortest = optimized;
+            shortest_len = length;
+        }
+    }
+    shortest
+}
+
+#[expect(
+    clippy::if_not_else,
+    reason = "Branch structure stays aligned with the upstream optimization cases"
+)]
+fn optimize_decomposition(rounded: &[TransformItem], raw: &[TransformItem]) -> Vec<TransformItem> {
+    let mut optimized = Vec::new();
+    let mut index = 0;
+    while index < rounded.len() {
+        let transform = &rounded[index];
+        if is_identity_transform(transform) {
+            index += 1;
+            continue;
+        }
+        match transform.name {
+            "rotate" if matches!(transform.data[0], 180.0 | -180.0) => {
+                if let Some(next) = rounded.get(index + 1)
+                    && next.name == "scale"
+                {
+                    optimized.push(create_scale_transform(
+                        next.data.iter().copied().map(|value| -value).collect(),
+                    ));
+                    index += 2;
+                    continue;
+                }
+                optimized.push(TransformItem {
+                    name: "scale",
+                    data: vec![-1.0],
+                });
+            }
+            "rotate" => {
+                optimized.push(TransformItem {
+                    name: "rotate",
+                    data: if transform.data.get(1).copied().unwrap_or_default() != 0.0
+                        || transform.data.get(2).copied().unwrap_or_default() != 0.0
+                    {
+                        transform.data[..3.min(transform.data.len())].to_vec()
+                    } else {
+                        transform.data[..1].to_vec()
+                    },
+                });
+            }
+            "scale" => optimized.push(create_scale_transform(transform.data.clone())),
+            "skewX" | "skewY" => optimized.push(TransformItem {
+                name: transform.name,
+                data: vec![transform.data[0]],
+            }),
+            "translate" => {
+                if let Some(next) = rounded.get(index + 1)
+                    && next.name == "rotate"
+                    && !matches!(next.data[0], 180.0 | -180.0 | 0.0)
+                    && next.data.get(1).copied().unwrap_or_default() == 0.0
+                    && next.data.get(2).copied().unwrap_or_default() == 0.0
+                {
+                    optimized.push(merge_translate_and_rotate(
+                        raw[index].data[0],
+                        raw[index].data[1],
+                        raw[index + 1].data[0],
+                    ));
+                    index += 2;
+                    continue;
+                }
+                optimized.push(TransformItem {
+                    name: "translate",
+                    data: if transform.data.get(1).copied().unwrap_or_default() != 0.0 {
+                        transform.data[..2.min(transform.data.len())].to_vec()
+                    } else {
+                        transform.data[..1].to_vec()
+                    },
+                });
+            }
+            _ => optimized.push(transform.clone()),
+        }
+        index += 1;
+    }
+    if optimized.is_empty() {
+        vec![TransformItem {
+            name: "scale",
+            data: vec![1.0],
+        }]
+    } else {
+        optimized
+    }
+}
+
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Owned transform data keeps the helper signature symmetric with its callers"
+)]
+#[expect(
+    clippy::float_cmp,
+    reason = "Scale shortening intentionally mirrors SVGO comparisons during the port"
+)]
+fn create_scale_transform(data: Vec<f64>) -> TransformItem {
+    let keep_two = data.len() > 1 && data[0] != data[1];
+    TransformItem {
+        name: "scale",
+        data: if keep_two {
+            data[..2].to_vec()
+        } else {
+            vec![data[0]]
+        },
+    }
+}
+
+#[expect(
+    clippy::many_single_char_names,
+    reason = "Matrix coefficients follow the SVG a-f convention"
+)]
+#[expect(
+    clippy::float_cmp,
+    reason = "Decomposition comparisons intentionally mirror SVGO matrix logic during the port"
+)]
+#[expect(
+    clippy::suboptimal_flops,
+    reason = "Keeping the formulas visually close to SVGO improves auditability"
+)]
+fn decompose_qrab(matrix: &TransformItem) -> Option<Vec<TransformItem>> {
+    let [a, b, c, d, e, f] = matrix_array(matrix);
+    let delta = a * d - b * c;
+    if delta == 0.0 {
+        return None;
+    }
+    let r = a.hypot(b);
+    if r == 0.0 {
+        return None;
+    }
+
+    let mut decomposition = Vec::new();
+    if e != 0.0 || f != 0.0 {
+        decomposition.push(TransformItem {
+            name: "translate",
+            data: vec![e, f],
+        });
+    }
+
+    let cos_angle = a / r;
+    if cos_angle != 1.0 {
+        let radians = cos_angle.acos();
+        decomposition.push(TransformItem {
+            name: "rotate",
+            data: vec![
+                radians_to_degrees(if b < 0.0 { -radians } else { radians }),
+                0.0,
+                0.0,
+            ],
+        });
+    }
+
+    let sx = r;
+    let sy = delta / sx;
+    if sx != 1.0 || sy != 1.0 {
+        decomposition.push(TransformItem {
+            name: "scale",
+            data: vec![sx, sy],
+        });
+    }
+
+    let ac_plus_bd = a * c + b * d;
+    if ac_plus_bd != 0.0 {
+        decomposition.push(TransformItem {
+            name: "skewX",
+            data: vec![radians_to_degrees((ac_plus_bd / (a * a + b * b)).atan())],
+        });
+    }
+
+    Some(decomposition)
+}
+
+#[expect(
+    clippy::many_single_char_names,
+    reason = "Matrix coefficients follow the SVG a-f convention"
+)]
+#[expect(
+    clippy::float_cmp,
+    reason = "Decomposition comparisons intentionally mirror SVGO matrix logic during the port"
+)]
+#[expect(
+    clippy::suboptimal_flops,
+    reason = "Keeping the formulas visually close to SVGO improves auditability"
+)]
+fn decompose_qrcd(matrix: &TransformItem) -> Option<Vec<TransformItem>> {
+    let [a, b, c, d, e, f] = matrix_array(matrix);
+    let delta = a * d - b * c;
+    if delta == 0.0 {
+        return None;
+    }
+    let s = c.hypot(d);
+    if s == 0.0 {
+        return None;
+    }
+
+    let mut decomposition = Vec::new();
+    if e != 0.0 || f != 0.0 {
+        decomposition.push(TransformItem {
+            name: "translate",
+            data: vec![e, f],
+        });
+    }
+
+    let radians =
+        std::f64::consts::FRAC_PI_2 - if d < 0.0 { -1.0 } else { 1.0 } * (-c / s).acos();
+    decomposition.push(TransformItem {
+        name: "rotate",
+        data: vec![radians_to_degrees(radians), 0.0, 0.0],
+    });
+
+    let sx = delta / s;
+    let sy = s;
+    if sx != 1.0 || sy != 1.0 {
+        decomposition.push(TransformItem {
+            name: "scale",
+            data: vec![sx, sy],
+        });
+    }
+
+    let ac_plus_bd = a * c + b * d;
+    if ac_plus_bd != 0.0 {
+        decomposition.push(TransformItem {
+            name: "skewY",
+            data: vec![radians_to_degrees((ac_plus_bd / (c * c + d * d)).atan())],
+        });
+    }
+
+    Some(decomposition)
+}
+
+#[expect(
+    clippy::suspicious_operation_groupings,
+    reason = "Formula is a direct port of the SVGO rotation-center derivation"
+)]
+#[expect(
+    clippy::suboptimal_flops,
+    reason = "Keeping the formulas visually close to SVGO improves auditability"
+)]
+fn merge_translate_and_rotate(tx: f64, ty: f64, angle: f64) -> TransformItem {
+    let radians = degrees_to_radians(angle);
+    let d = 1.0 - radians.cos();
+    let e = radians.sin();
+    let cy = (d * ty + e * tx) / (d * d + e * e);
+    let cx = (tx - e * cy) / d;
+    TransformItem {
+        name: "rotate",
+        data: vec![angle, cx, cy],
+    }
+}
+
+fn transforms_multiply(transforms: &[TransformItem]) -> TransformItem {
+    let data = transforms
+        .iter()
+        .map(transform_to_matrix)
+        .reduce(multiply_transform_matrices)
+        .unwrap_or([1.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
+    TransformItem {
+        name: "matrix",
+        data: data.to_vec(),
+    }
+}
+
+#[expect(
+    clippy::suboptimal_flops,
+    reason = "Keeping the formulas visually close to SVGO improves auditability"
+)]
+fn transform_to_matrix(transform: &TransformItem) -> [f64; 6] {
+    match transform.name {
+        "matrix" => matrix_array(transform),
+        "translate" => [
+            1.0,
+            0.0,
+            0.0,
+            1.0,
+            transform.data[0],
+            transform.data.get(1).copied().unwrap_or_default(),
+        ],
+        "scale" => [
+            transform.data[0],
+            0.0,
+            0.0,
+            transform.data.get(1).copied().unwrap_or(transform.data[0]),
+            0.0,
+            0.0,
+        ],
+        "rotate" => {
+            let cos = degrees_to_radians(transform.data[0]).cos();
+            let sin = degrees_to_radians(transform.data[0]).sin();
+            let cx = transform.data.get(1).copied().unwrap_or_default();
+            let cy = transform.data.get(2).copied().unwrap_or_default();
+            [
+                cos,
+                sin,
+                -sin,
+                cos,
+                (1.0 - cos) * cx + sin * cy,
+                (1.0 - cos) * cy - sin * cx,
+            ]
+        }
+        "skewX" => [
+            1.0,
+            0.0,
+            degrees_to_radians(transform.data[0]).tan(),
+            1.0,
+            0.0,
+            0.0,
+        ],
+        "skewY" => [
+            1.0,
+            degrees_to_radians(transform.data[0]).tan(),
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+        ],
+        _ => [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+    }
+}
+
+#[expect(
+    clippy::suboptimal_flops,
+    reason = "Keeping the formulas visually close to SVGO improves auditability"
+)]
+fn multiply_transform_matrices(a: [f64; 6], b: [f64; 6]) -> [f64; 6] {
+    [
+        a[0] * b[0] + a[2] * b[1],
+        a[1] * b[0] + a[3] * b[1],
+        a[0] * b[2] + a[2] * b[3],
+        a[1] * b[2] + a[3] * b[3],
+        a[0] * b[4] + a[2] * b[5] + a[4],
+        a[1] * b[4] + a[3] * b[5] + a[5],
+    ]
+}
+
+fn matrix_array(transform: &TransformItem) -> [f64; 6] {
+    [
+        transform.data[0],
+        transform.data[1],
+        transform.data[2],
+        transform.data[3],
+        transform.data[4],
+        transform.data[5],
+    ]
+}
+
+#[expect(
+    clippy::or_fun_call,
+    reason = "Current form keeps fallback precision logic explicit during the spike"
+)]
+fn round_transform_item(transform: &mut TransformItem, params: ConvertTransformParams) {
+    match transform.name {
+        "translate" => round_slice(&mut transform.data, params.float_precision),
+        "rotate" => {
+            let precision = params
+                .deg_precision
+                .unwrap_or(params.float_precision.saturating_sub(1));
+            if let Some(angle) = transform.data.first_mut() {
+                *angle = round_number(*angle, precision);
+            }
+            for value in transform.data.iter_mut().skip(1) {
+                *value = round_number(*value, params.float_precision);
+            }
+        }
+        "skewX" | "skewY" => {
+            let precision = params
+                .deg_precision
+                .unwrap_or(params.float_precision.saturating_sub(1));
+            round_slice(&mut transform.data, precision);
+        }
+        "scale" => round_slice(&mut transform.data, params.transform_precision),
+        "matrix" => {
+            for value in transform.data.iter_mut().take(4) {
+                *value = round_number(*value, params.transform_precision);
+            }
+            for value in transform.data.iter_mut().skip(4) {
+                *value = round_number(*value, params.float_precision);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn round_slice(values: &mut [f64], precision: usize) {
+    for value in values {
+        *value = round_number(*value, precision);
+    }
+}
+
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Transform precision is bounded by plugin params and safe in practice"
+)]
+#[expect(
+    clippy::cast_possible_wrap,
+    reason = "Transform precision is bounded by plugin params and safe in practice"
+)]
+fn round_number(value: f64, precision: usize) -> f64 {
+    if precision == 0 {
+        return value.round();
+    }
+    let factor = 10_f64.powi(precision as i32);
+    (value * factor).round() / factor
+}
+
+#[expect(
+    clippy::unnecessary_join,
+    reason = "The explicit collect+join keeps the port shape close to SVGO serialization"
+)]
+fn serialize_transforms(transforms: &[TransformItem], params: ConvertTransformParams) -> String {
+    transforms
+        .iter()
+        .cloned()
+        .map(|mut transform| {
+            round_transform_item(&mut transform, params);
+            format!(
+                "{}({})",
+                transform.name,
+                cleanup_out_data(&transform.data, params)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("")
+}
+
+fn cleanup_out_data(data: &[f64], params: ConvertTransformParams) -> String {
+    let mut output = String::new();
+    let mut previous = None;
+    for (index, value) in data.iter().copied().enumerate() {
+        let mut delimiter = if index == 0 { "" } else { " " };
+        let item = if params.leading_zero {
+            remove_leading_zero(value)
+        } else {
+            value.to_string()
+        };
+        if params.negative_extra_space
+            && !delimiter.is_empty()
+            && (value < 0.0
+                || (item.starts_with('.')
+                    && previous.is_some_and(|prev: f64| prev.fract() != 0.0)))
+        {
+            delimiter = "";
+        }
+        output.push_str(delimiter);
+        output.push_str(item.as_str());
+        previous = Some(value);
+    }
+    output
+}
+
+fn remove_leading_zero(value: f64) -> String {
+    let text = value.to_string();
+    if value > 0.0 && value < 1.0 && text.starts_with('0') {
+        text[1..].to_string()
+    } else if value < 0.0 && value > -1.0 && text.as_bytes().get(1) == Some(&b'0') {
+        format!("-{}", &text[2..])
+    } else {
+        text
+    }
+}
+
+#[expect(
+    clippy::suboptimal_flops,
+    reason = "Direct arithmetic keeps the helper explicit and close to the source formulas"
+)]
+fn degrees_to_radians(value: f64) -> f64 {
+    value * std::f64::consts::PI / 180.0
+}
+
+#[expect(
+    clippy::suboptimal_flops,
+    reason = "Direct arithmetic keeps the helper explicit and close to the source formulas"
+)]
+fn radians_to_degrees(value: f64) -> f64 {
+    value * 180.0 / std::f64::consts::PI
+}
+
+fn json_bool(params: Option<&Value>, name: &str, default: bool) -> bool {
+    params
+        .and_then(|value| value.get(name))
+        .and_then(Value::as_bool)
+        .unwrap_or(default)
+}
+
+fn json_usize(params: Option<&Value>, name: &str, default: usize) -> usize {
+    params
+        .and_then(|value| value.get(name))
+        .and_then(Value::as_u64)
+        .and_then(|value| usize::try_from(value).ok())
+        .unwrap_or(default)
+}
+
+fn json_usize_opt(params: Option<&Value>, name: &str) -> Option<usize> {
+    params
+        .and_then(|value| value.get(name))
+        .and_then(Value::as_u64)
+        .and_then(|value| usize::try_from(value).ok())
 }
 
 fn remove_non_inheritable_group_attrs(doc: &mut Document) {

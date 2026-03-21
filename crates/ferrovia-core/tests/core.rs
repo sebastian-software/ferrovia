@@ -104,6 +104,11 @@ fn matches_svgo_oracle_for_remove_useless_stroke_and_fill() {
     assert_oracle_fixture("remove-useless-stroke-and-fill");
 }
 
+#[test]
+fn matches_svgo_oracle_for_convert_transform() {
+    assert_oracle_fixture("convert-transform");
+}
+
 fn assert_oracle_fixture(name: &str) {
     let root = workspace_root();
     let svg_path = root.join(format!("tests/fixtures/oracle/{name}.svg"));
@@ -347,4 +352,19 @@ fn remove_useless_stroke_and_fill_removes_shape_when_remove_none_is_enabled() {
 
     let result = optimize(svg, &config).expect("optimize");
     assert_eq!(result.data, r#"<svg xmlns="http://www.w3.org/2000/svg"/>"#);
+}
+
+#[test]
+fn convert_transform_removes_identity_and_shortens_rotate_about_center() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><g transform="translate(10 20) rotate(90) translate(-10 -20) scale(1 1) skewY(0)"/></svg>"#;
+    let config = Config {
+        plugins: vec![PluginSpec::Name("convertTransform".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><g transform="rotate(90 10 20)"/></svg>"#
+    );
 }
