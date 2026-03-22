@@ -14,5 +14,6 @@ This directory captures the current ferrovia decisions in descending importance.
 - `0008` tree rewrite mutation rules
 - `0009` minimal semantic collections
 - `0010` dependency leverage and OSS adoption
+- `0011` minimal css stylesheet model
 
 New ADRs should continue the numeric sequence. If a later decision supersedes an older one, add a new ADR and link back to the superseded document instead of rewriting history.
