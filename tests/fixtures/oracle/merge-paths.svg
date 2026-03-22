@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="paint"/>
+  </defs>
+  <style>.marker { marker-start: none; }</style>
+  <g id="mergeable">
+    <path fill="red" d="M0 0H10"/>
+    <path fill="red" d="M20 0H30"/>
+  </g>
+  <g id="barrier">
+    <path fill="red" d="M0 10H10"/>
+    <rect width="1" height="1"/>
+    <path fill="red" d="M20 10H30"/>
+  </g>
+  <g id="url-skip">
+    <path fill="url(#paint)" d="M0 20H10"/>
+    <path fill="url(#paint)" d="M20 20H30"/>
+  </g>
+  <g id="css-marker">
+    <path class="marker" d="M0 30H10"/>
+    <path class="marker" d="M20 30H30"/>
+  </g>
+</svg>

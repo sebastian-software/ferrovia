@@ -165,6 +165,16 @@ fn matches_svgo_oracle_for_convert_path_data() {
 }
 
 #[test]
+fn matches_svgo_oracle_for_merge_paths() {
+    assert_oracle_fixture("merge-paths");
+}
+
+#[test]
+fn matches_svgo_oracle_for_merge_paths_force() {
+    assert_oracle_fixture("merge-paths-force");
+}
+
+#[test]
 fn inline_styles_leaves_multi_match_selector_by_default() {
     let svg = concat!(
         r#"<svg xmlns="http://www.w3.org/2000/svg"><style>.hero{fill:red}</style>"#,
@@ -326,6 +336,24 @@ fn preset_default_runs_convert_path_data() {
     assert_eq!(
         result.data,
         r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M10 10h10v15"/></svg>"#
+    );
+}
+
+#[test]
+fn preset_default_runs_merge_paths() {
+    let svg = concat!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><g>"#,
+        r#"<path fill="red" d="M0 0H10"/><path fill="red" d="M20 0H30"/></g></svg>"#
+    );
+    let config = Config {
+        plugins: vec![PluginSpec::Name("preset-default".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><g fill="red"><path d="M0 0h10M20 0h10"/></g></svg>"#
     );
 }
 

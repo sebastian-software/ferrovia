@@ -45,6 +45,7 @@ const PRESET_DEFAULT: &[&str] = &[
     "convertTransform",
     "removeEmptyAttrs",
     "removeEmptyContainers",
+    "mergePaths",
     "removeUnusedNS",
     "sortAttrs",
     "sortDefsChildren",
@@ -84,6 +85,7 @@ pub fn apply_plugins(doc: &mut Document, config: &Config) -> Result<()> {
             "convertEllipseToCircle" => convert_ellipse_to_circle(doc),
             "convertTransform" => convert_transform(doc, params.as_ref()),
             "convertPathData" => convert_path_data(doc, params.as_ref()),
+            "mergePaths" => merge_paths(doc, params.as_ref()),
             "moveElemsAttrsToGroup" => move_elems_attrs_to_group(doc),
             "moveGroupAttrsToElems" => move_group_attrs_to_elems(doc),
             "collapseGroups" => collapse_groups(doc),
@@ -1901,6 +1903,7 @@ struct ConvertPathDataParams {
     collapse_repeated: bool,
     leading_zero: bool,
     negative_extra_space: bool,
+    no_space_after_flags: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1955,6 +1958,7 @@ fn convert_path_data_params(params: Option<&Value>) -> ConvertPathDataParams {
         collapse_repeated: json_bool(params, "collapseRepeated", true),
         leading_zero: json_bool(params, "leadingZero", true),
         negative_extra_space: json_bool(params, "negativeExtraSpace", true),
+        no_space_after_flags: json_bool(params, "noSpaceAfterFlags", false),
     }
 }
 
@@ -2259,6 +2263,7 @@ fn serialize_path_items(items: &[PathItem], params: ConvertPathDataParams) -> St
                 params.float_precision,
                 params.leading_zero,
                 params.negative_extra_space,
+                params.no_space_after_flags,
                 matches!(item.command, 'a' | 'A'),
             )
             .as_str(),
@@ -2267,18 +2272,25 @@ fn serialize_path_items(items: &[PathItem], params: ConvertPathDataParams) -> St
     output
 }
 
+#[expect(
+    clippy::fn_params_excessive_bools,
+    reason = "Path serialization mirrors SVGO's boolean formatting switches"
+)]
 fn serialize_path_numbers(
     values: &[f64],
     precision: usize,
     leading_zero: bool,
     negative_extra_space: bool,
+    no_space_after_flags: bool,
     is_arc: bool,
 ) -> String {
     let mut output = String::new();
     let mut previous = None;
     for (index, value) in values.iter().copied().enumerate() {
         let rounded = round_number(value, precision);
-        let mut delimiter = if index == 0 || (is_arc && (index % 7 == 4 || index % 7 == 5)) {
+        let mut delimiter = if index == 0
+            || (is_arc && no_space_after_flags && (index % 7 == 4 || index % 7 == 5))
+        {
             ""
         } else {
             " "
@@ -2305,6 +2317,338 @@ fn serialize_path_numbers(
 
 fn has_same_sign(left: f64, right: f64) -> bool {
     is_zero(left) || is_zero(right) || left.is_sign_positive() == right.is_sign_positive()
+}
+
+#[derive(Debug, Clone, Copy)]
+struct MergePathsParams {
+    force: bool,
+    float_precision: usize,
+    no_space_after_flags: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PathBounds {
+    min_x: f64,
+    min_y: f64,
+    max_x: f64,
+    max_y: f64,
+}
+
+fn merge_paths(doc: &mut Document, params: Option<&Value>) {
+    let params = merge_paths_params(params);
+    let stylesheet = collect_semantic_stylesheet(doc);
+    let mut style_cache = HashMap::<usize, HashMap<String, String>>::new();
+    let parent_ids: Vec<_> = doc
+        .nodes
+        .iter()
+        .enumerate()
+        .filter_map(|(node_id, node)| {
+            matches!(node.kind, NodeKind::Element(_)).then_some(node_id)
+        })
+        .collect();
+
+    for parent_id in parent_ids {
+        let child_ids: Vec<_> = doc.children(parent_id).collect();
+        if child_ids.len() <= 1 {
+            continue;
+        }
+
+        let mut remove_ids = Vec::new();
+        let mut prev_child = child_ids[0];
+        let mut prev_path_data: Option<Vec<PathItem>> = None;
+
+        for &child_id in &child_ids[1..] {
+            if !is_merge_path_candidate(doc, prev_child) {
+                if let Some(data) = prev_path_data.take() {
+                    write_merged_path_data(doc, prev_child, &data, params);
+                }
+                prev_child = child_id;
+                continue;
+            }
+
+            if !is_merge_path_candidate(doc, child_id)
+                || merge_paths_style_deopt(doc, child_id, &stylesheet, &mut style_cache)
+                || !merge_path_attributes_match(doc, prev_child, child_id)
+            {
+                if let Some(data) = prev_path_data.take() {
+                    write_merged_path_data(doc, prev_child, &data, params);
+                }
+                prev_child = child_id;
+                continue;
+            }
+
+            let Some(current_path_data) = parse_node_path_data(doc, child_id) else {
+                if let Some(data) = prev_path_data.take() {
+                    write_merged_path_data(doc, prev_child, &data, params);
+                }
+                prev_child = child_id;
+                continue;
+            };
+
+            if prev_path_data.is_none() {
+                prev_path_data = parse_node_path_data(doc, prev_child);
+            }
+            let Some(previous_path_data) = &mut prev_path_data else {
+                prev_child = child_id;
+                continue;
+            };
+
+            if params.force || !paths_intersect(previous_path_data, &current_path_data) {
+                previous_path_data.extend(current_path_data);
+                remove_ids.push(child_id);
+                continue;
+            }
+
+            if let Some(data) = prev_path_data.take() {
+                write_merged_path_data(doc, prev_child, &data, params);
+            }
+            prev_child = child_id;
+        }
+
+        if let Some(data) = prev_path_data.take() {
+            write_merged_path_data(doc, prev_child, &data, params);
+        }
+
+        for node_id in remove_ids {
+            detach_node(doc, node_id);
+        }
+    }
+}
+
+fn merge_paths_params(params: Option<&Value>) -> MergePathsParams {
+    MergePathsParams {
+        force: json_bool(params, "force", false),
+        float_precision: json_usize_opt(params, "floatPrecision").unwrap_or(3),
+        no_space_after_flags: json_bool(params, "noSpaceAfterFlags", false),
+    }
+}
+
+fn is_merge_path_candidate(doc: &Document, node_id: usize) -> bool {
+    let Some(element) = node_element(doc, node_id) else {
+        return false;
+    };
+    element.name == "path"
+        && doc.children(node_id).next().is_none()
+        && attribute_value(element.attributes.as_slice(), "d").is_some()
+}
+
+fn merge_paths_style_deopt(
+    doc: &Document,
+    node_id: usize,
+    stylesheet: &[StylesheetRule],
+    cache: &mut HashMap<usize, HashMap<String, String>>,
+) -> bool {
+    let computed_style = compute_static_style(doc, node_id, stylesheet, cache);
+    ["marker-start", "marker-mid", "marker-end", "clip-path", "mask", "mask-image"]
+        .iter()
+        .any(|name| computed_style.contains_key(*name))
+        || ["fill", "filter", "stroke"].iter().any(|name| {
+            computed_style
+                .get(*name)
+                .is_some_and(|value| includes_url_reference(value))
+        })
+}
+
+fn merge_path_attributes_match(doc: &Document, left_id: usize, right_id: usize) -> bool {
+    let Some(left) = node_element(doc, left_id) else {
+        return false;
+    };
+    let Some(right) = node_element(doc, right_id) else {
+        return false;
+    };
+    if left.attributes.len() != right.attributes.len() {
+        return false;
+    }
+    right
+        .attributes
+        .iter()
+        .filter(|attribute| attribute.name != "d")
+        .all(|attribute| {
+            attribute_value(left.attributes.as_slice(), attribute.name.as_str())
+                == Some(attribute.value.as_str())
+        })
+}
+
+fn parse_node_path_data(doc: &Document, node_id: usize) -> Option<Vec<PathItem>> {
+    node_element(doc, node_id)
+        .and_then(|element| attribute_value(element.attributes.as_slice(), "d"))
+        .and_then(|value| parse_path_items(value).ok())
+}
+
+fn write_merged_path_data(
+    doc: &mut Document,
+    node_id: usize,
+    items: &[PathItem],
+    params: MergePathsParams,
+) {
+    let Some(element) = node_element(doc, node_id) else {
+        return;
+    };
+    let quote = attribute_named(element.attributes.as_slice(), "d")
+        .map_or(QuoteStyle::Double, |attribute| attribute.quote);
+    let serialized = serialize_path_items(
+        items,
+        ConvertPathDataParams {
+            float_precision: params.float_precision,
+            line_shorthands: false,
+            remove_useless: false,
+            collapse_repeated: false,
+            leading_zero: true,
+            negative_extra_space: true,
+            no_space_after_flags: params.no_space_after_flags,
+        },
+    );
+    let NodeKind::Element(element) = &mut doc.node_mut(node_id).kind else {
+        return;
+    };
+    set_or_push_attribute(&mut element.attributes, "d", serialized.as_str(), quote);
+}
+
+fn paths_intersect(left: &[PathItem], right: &[PathItem]) -> bool {
+    let Some(left_bounds) = path_bounds(left) else {
+        return true;
+    };
+    let Some(right_bounds) = path_bounds(right) else {
+        return true;
+    };
+    !(left_bounds.max_x <= right_bounds.min_x
+        || right_bounds.max_x <= left_bounds.min_x
+        || left_bounds.max_y <= right_bounds.min_y
+        || right_bounds.max_y <= left_bounds.min_y)
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "Bounding-box sampling keeps mergePaths conservative without a separate geometry module"
+)]
+fn path_bounds(items: &[PathItem]) -> Option<PathBounds> {
+    let mut bounds = None;
+    let mut cursor_x = 0.0;
+    let mut cursor_y = 0.0;
+    let mut start_x = 0.0;
+    let mut start_y = 0.0;
+
+    for item in items {
+        match item.command {
+            'M' => {
+                cursor_x = item.args[0];
+                cursor_y = item.args[1];
+                start_x = cursor_x;
+                start_y = cursor_y;
+                include_point(&mut bounds, cursor_x, cursor_y);
+            }
+            'm' => {
+                cursor_x += item.args[0];
+                cursor_y += item.args[1];
+                start_x = cursor_x;
+                start_y = cursor_y;
+                include_point(&mut bounds, cursor_x, cursor_y);
+            }
+            'L' | 'T' => {
+                cursor_x = item.args[0];
+                cursor_y = item.args[1];
+                include_point(&mut bounds, cursor_x, cursor_y);
+            }
+            'l' | 't' => {
+                cursor_x += item.args[0];
+                cursor_y += item.args[1];
+                include_point(&mut bounds, cursor_x, cursor_y);
+            }
+            'H' => {
+                cursor_x = item.args[0];
+                include_point(&mut bounds, cursor_x, cursor_y);
+            }
+            'h' => {
+                cursor_x += item.args[0];
+                include_point(&mut bounds, cursor_x, cursor_y);
+            }
+            'V' => {
+                cursor_y = item.args[0];
+                include_point(&mut bounds, cursor_x, cursor_y);
+            }
+            'v' => {
+                cursor_y += item.args[0];
+                include_point(&mut bounds, cursor_x, cursor_y);
+            }
+            'C' => {
+                include_point(&mut bounds, item.args[0], item.args[1]);
+                include_point(&mut bounds, item.args[2], item.args[3]);
+                cursor_x = item.args[4];
+                cursor_y = item.args[5];
+                include_point(&mut bounds, cursor_x, cursor_y);
+            }
+            'c' => {
+                include_point(&mut bounds, cursor_x + item.args[0], cursor_y + item.args[1]);
+                include_point(&mut bounds, cursor_x + item.args[2], cursor_y + item.args[3]);
+                cursor_x += item.args[4];
+                cursor_y += item.args[5];
+                include_point(&mut bounds, cursor_x, cursor_y);
+            }
+            'S' | 'Q' => {
+                include_point(&mut bounds, item.args[0], item.args[1]);
+                cursor_x = item.args[2];
+                cursor_y = item.args[3];
+                include_point(&mut bounds, cursor_x, cursor_y);
+            }
+            's' | 'q' => {
+                include_point(&mut bounds, cursor_x + item.args[0], cursor_y + item.args[1]);
+                cursor_x += item.args[2];
+                cursor_y += item.args[3];
+                include_point(&mut bounds, cursor_x, cursor_y);
+            }
+            'A' => {
+                let rx = item.args[0].abs();
+                let ry = item.args[1].abs();
+                include_point(&mut bounds, cursor_x - rx, cursor_y - ry);
+                include_point(&mut bounds, cursor_x + rx, cursor_y + ry);
+                cursor_x = item.args[5];
+                cursor_y = item.args[6];
+                include_point(&mut bounds, cursor_x - rx, cursor_y - ry);
+                include_point(&mut bounds, cursor_x + rx, cursor_y + ry);
+            }
+            'a' => {
+                let rx = item.args[0].abs();
+                let ry = item.args[1].abs();
+                include_point(&mut bounds, cursor_x - rx, cursor_y - ry);
+                include_point(&mut bounds, cursor_x + rx, cursor_y + ry);
+                cursor_x += item.args[5];
+                cursor_y += item.args[6];
+                include_point(&mut bounds, cursor_x - rx, cursor_y - ry);
+                include_point(&mut bounds, cursor_x + rx, cursor_y + ry);
+            }
+            'Z' | 'z' => {
+                cursor_x = start_x;
+                cursor_y = start_y;
+                include_point(&mut bounds, cursor_x, cursor_y);
+            }
+            _ => {}
+        }
+    }
+
+    bounds
+}
+
+#[expect(
+    clippy::missing_const_for_fn,
+    reason = "The helper mutates floating-point bounds; const adds no practical value here"
+)]
+fn include_point(bounds: &mut Option<PathBounds>, x: f64, y: f64) {
+    match bounds {
+        Some(bounds) => {
+            bounds.min_x = bounds.min_x.min(x);
+            bounds.min_y = bounds.min_y.min(y);
+            bounds.max_x = bounds.max_x.max(x);
+            bounds.max_y = bounds.max_y.max(y);
+        }
+        None => {
+            *bounds = Some(PathBounds {
+                min_x: x,
+                min_y: y,
+                max_x: x,
+                max_y: y,
+            });
+        }
+    }
 }
 
 #[expect(

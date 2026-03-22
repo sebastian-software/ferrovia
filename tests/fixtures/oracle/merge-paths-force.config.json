@@ -1,0 +1,10 @@
+{
+  "plugins": [
+    {
+      "name": "mergePaths",
+      "params": {
+        "force": true
+      }
+    }
+  ]
+}
