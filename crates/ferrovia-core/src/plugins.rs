@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
 
 use serde_json::Value;
+use svgtypes::Color;
 
 use crate::ast::{Attribute, Document, NodeKind, QuoteStyle};
 use crate::config::{Config, PluginSpec};
@@ -27,6 +29,7 @@ const PRESET_DEFAULT: &[&str] = &[
     "cleanupIds",
     "removeUselessDefs",
     "cleanupNumericValues",
+    "convertColors",
     "removeUnknownsAndDefaults",
     "removeNonInheritableGroupAttrs",
     "removeUselessStrokeAndFill",
@@ -67,6 +70,7 @@ pub fn apply_plugins(doc: &mut Document, config: &Config) -> Result<()> {
             "minifyStyles" => minify_styles(doc, params.as_ref()),
             "removeUselessDefs" => remove_useless_defs(doc),
             "cleanupNumericValues" => cleanup_numeric_values(doc, params.as_ref()),
+            "convertColors" => convert_colors(doc, params.as_ref()),
             "removeUnknownsAndDefaults" => remove_unknowns_and_defaults(doc, params.as_ref()),
             "removeNonInheritableGroupAttrs" => remove_non_inheritable_group_attrs(doc),
             "removeUselessStrokeAndFill" => remove_useless_stroke_and_fill(doc, params.as_ref()),
@@ -465,6 +469,202 @@ fn absolute_length_factor(unit: &str) -> Option<f64> {
         "pt" => Some(4.0 / 3.0),
         "pc" => Some(16.0),
         "px" => Some(1.0),
+        _ => None,
+    }
+}
+
+#[derive(Debug, Clone)]
+enum CurrentColorMode {
+    Disabled,
+    Any,
+    Exact(String),
+}
+
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "SVGO convertColors parameters are boolean-heavy by design"
+)]
+#[derive(Debug, Clone)]
+struct ConvertColorsParams {
+    current_color: CurrentColorMode,
+    names_to_hex: bool,
+    rgb_to_hex: bool,
+    convert_case: Option<ConvertCase>,
+    shorthex: bool,
+    shortname: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ConvertCase {
+    Lower,
+    Upper,
+}
+
+fn convert_colors(doc: &mut Document, params: Option<&Value>) {
+    let params = convert_colors_params(params);
+    for node_id in 1..doc.nodes.len() {
+        let in_mask_subtree = has_ancestor_element(doc, node_id, "mask");
+        let NodeKind::Element(element) = &mut doc.node_mut(node_id).kind else {
+            continue;
+        };
+        for attribute in &mut element.attributes {
+            if !is_color_property(attribute.name.as_str()) {
+                continue;
+            }
+            attribute.value =
+                convert_color_value(attribute.value.as_str(), &params, in_mask_subtree);
+        }
+    }
+}
+
+fn convert_colors_params(params: Option<&Value>) -> ConvertColorsParams {
+    let current_color = match params.and_then(|value| value.get("currentColor")) {
+        Some(Value::Bool(true)) => CurrentColorMode::Any,
+        Some(Value::String(text)) => CurrentColorMode::Exact(text.clone()),
+        _ => CurrentColorMode::Disabled,
+    };
+    let convert_case = match params.and_then(|value| value.get("convertCase")) {
+        Some(Value::Bool(false)) => None,
+        Some(Value::String(value)) if value == "upper" => Some(ConvertCase::Upper),
+        _ => Some(ConvertCase::Lower),
+    };
+
+    ConvertColorsParams {
+        current_color,
+        names_to_hex: json_bool(params, "names2hex", true),
+        rgb_to_hex: json_bool(params, "rgb2hex", true),
+        convert_case,
+        shorthex: json_bool(params, "shorthex", true),
+        shortname: json_bool(params, "shortname", true),
+    }
+}
+
+fn convert_color_value(value: &str, params: &ConvertColorsParams, in_mask_subtree: bool) -> String {
+    let mut converted = value.to_string();
+
+    if !in_mask_subtree {
+        let current_color_matches = match &params.current_color {
+            CurrentColorMode::Disabled => false,
+            CurrentColorMode::Any => converted != "none",
+            CurrentColorMode::Exact(expected) => converted == *expected,
+        };
+        if current_color_matches {
+            return "currentColor".to_string();
+        }
+    }
+
+    if params.names_to_hex
+        && is_plain_color_name(converted.as_str())
+        && let Ok(color) = Color::from_str(converted.as_str())
+    {
+        converted = serialize_long_hex(color, false);
+    }
+
+    if params.rgb_to_hex
+        && is_rgb_function(converted.as_str())
+        && let Ok(color) = Color::from_str(converted.as_str())
+    {
+        converted = serialize_long_hex(color, true);
+    }
+
+    if let Some(convert_case) = params.convert_case
+        && !includes_url_reference(converted.as_str())
+        && converted != "currentColor"
+    {
+        converted = match convert_case {
+            ConvertCase::Lower => converted.to_lowercase(),
+            ConvertCase::Upper => converted.to_uppercase(),
+        };
+    }
+
+    if params.shorthex
+        && let Some(shortened) = shorten_hex(converted.as_str())
+    {
+        converted = shortened;
+    }
+
+    if params.shortname
+        && let Some(short_name) = short_color_name(converted.as_str())
+    {
+        converted = short_name.to_string();
+    }
+
+    converted
+}
+
+fn is_color_property(name: &str) -> bool {
+    matches!(
+        name,
+        "color" | "fill" | "flood-color" | "lighting-color" | "stop-color" | "stroke"
+    )
+}
+
+fn is_plain_color_name(value: &str) -> bool {
+    !value.is_empty() && value.chars().all(|char| char.is_ascii_alphabetic())
+}
+
+fn is_rgb_function(value: &str) -> bool {
+    value.trim_start().starts_with("rgb(") || value.trim_start().starts_with("rgba(")
+}
+
+fn serialize_long_hex(color: Color, uppercase: bool) -> String {
+    let mut serialized = format!("#{:02x}{:02x}{:02x}", color.red, color.green, color.blue);
+    if uppercase {
+        serialized.make_ascii_uppercase();
+    }
+    serialized
+}
+
+fn shorten_hex(value: &str) -> Option<String> {
+    let hex = value.strip_prefix('#')?;
+    if hex.len() != 6 {
+        return None;
+    }
+    let chars = hex.as_bytes();
+    if chars[0] == chars[1] && chars[2] == chars[3] && chars[4] == chars[5] {
+        return Some(format!(
+            "#{}{}{}",
+            char::from(chars[0]),
+            char::from(chars[2]),
+            char::from(chars[4])
+        ));
+    }
+    None
+}
+
+fn short_color_name(value: &str) -> Option<&'static str> {
+    match value.to_ascii_lowercase().as_str() {
+        "#f0ffff" => Some("azure"),
+        "#f5f5dc" => Some("beige"),
+        "#ffe4c4" => Some("bisque"),
+        "#a52a2a" => Some("brown"),
+        "#ff7f50" => Some("coral"),
+        "#ffd700" => Some("gold"),
+        "#808080" => Some("gray"),
+        "#008000" => Some("green"),
+        "#4b0082" => Some("indigo"),
+        "#fffff0" => Some("ivory"),
+        "#f0e68c" => Some("khaki"),
+        "#faf0e6" => Some("linen"),
+        "#800000" => Some("maroon"),
+        "#000080" => Some("navy"),
+        "#808000" => Some("olive"),
+        "#ffa500" => Some("orange"),
+        "#da70d6" => Some("orchid"),
+        "#cd853f" => Some("peru"),
+        "#ffc0cb" => Some("pink"),
+        "#dda0dd" => Some("plum"),
+        "#800080" => Some("purple"),
+        "#f00" | "#ff0000" => Some("red"),
+        "#fa8072" => Some("salmon"),
+        "#a0522d" => Some("sienna"),
+        "#c0c0c0" => Some("silver"),
+        "#fffafa" => Some("snow"),
+        "#d2b48c" => Some("tan"),
+        "#008080" => Some("teal"),
+        "#ff6347" => Some("tomato"),
+        "#ee82ee" => Some("violet"),
+        "#f5deb3" => Some("wheat"),
         _ => None,
     }
 }
@@ -4632,13 +4832,17 @@ fn attribute_default_value(element_name: &str, attr_name: &str) -> Option<&'stat
 }
 
 fn is_in_foreign_object_subtree(doc: &Document, node_id: usize) -> bool {
+    has_ancestor_element(doc, node_id, "foreignObject")
+}
+
+fn has_ancestor_element(doc: &Document, node_id: usize, name: &str) -> bool {
     let mut current = Some(node_id);
     while let Some(id) = current {
         let Some(element) = node_element(doc, id) else {
             current = doc.node(id).parent;
             continue;
         };
-        if element.name == "foreignObject" {
+        if element.name == name {
             return true;
         }
         current = doc.node(id).parent;

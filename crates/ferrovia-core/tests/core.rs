@@ -135,6 +135,11 @@ fn matches_svgo_oracle_for_cleanup_numeric_values() {
 }
 
 #[test]
+fn matches_svgo_oracle_for_convert_colors() {
+    assert_oracle_fixture("convert-colors");
+}
+
+#[test]
 fn matches_svgo_oracle_for_remove_hidden_elems() {
     assert_oracle_fixture("remove-hidden-elems");
 }
@@ -194,6 +199,25 @@ fn cleanup_numeric_values_rounds_and_strips_default_px() {
     assert_eq!(
         result.data,
         r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10.123 20.988"><rect x="10.5" y="96" width=".5" version="1.1"/></svg>"#
+    );
+}
+
+#[test]
+fn convert_colors_skips_current_color_conversion_inside_masks() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><mask id="m"><rect fill="blue"/></mask><rect fill="red" stroke="none"/></svg>"#;
+    let config = Config {
+        plugins: vec![PluginSpec::Configured(PluginConfig {
+            name: "convertColors".to_string(),
+            params: Some(json!({ "currentColor": true })),
+            enabled: true,
+        })],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r##"<svg xmlns="http://www.w3.org/2000/svg"><mask id="m"><rect fill="#00f"/></mask><rect fill="currentColor" stroke="none"/></svg>"##
     );
 }
 

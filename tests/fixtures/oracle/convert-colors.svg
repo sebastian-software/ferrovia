@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <mask id="m">
+    <rect fill="blue"/>
+  </mask>
+  <rect fill="rgb(255, 0, 0)" stroke="navy"/>
+  <circle fill="red" stroke="none"/>
+</svg>
