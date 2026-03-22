@@ -1,0 +1,11 @@
+{
+  "plugins": [
+    {
+      "name": "convertShapeToPath",
+      "params": {
+        "convertArcs": true,
+        "floatPrecision": 3
+      }
+    }
+  ]
+}

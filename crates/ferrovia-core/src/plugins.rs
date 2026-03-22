@@ -36,6 +36,7 @@ const PRESET_DEFAULT: &[&str] = &[
     "cleanupEnableBackground",
     "removeHiddenElems",
     "removeEmptyText",
+    "convertShapeToPath",
     "convertEllipseToCircle",
     "convertTransform",
     "moveElemsAttrsToGroup",
@@ -78,6 +79,7 @@ pub fn apply_plugins(doc: &mut Document, config: &Config) -> Result<()> {
             "cleanupEnableBackground" => cleanup_enable_background(doc),
             "removeHiddenElems" => remove_hidden_elems(doc, params.as_ref()),
             "removeEmptyText" => remove_empty_text(doc, params.as_ref()),
+            "convertShapeToPath" => convert_shape_to_path(doc, params.as_ref()),
             "convertEllipseToCircle" => convert_ellipse_to_circle(doc),
             "convertTransform" => convert_transform(doc, params.as_ref()),
             "convertPathData" => convert_path_data(doc, params.as_ref()),
@@ -581,6 +583,367 @@ fn convert_ellipse_to_circle(doc: &mut Document) {
             quote,
         });
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ConvertShapeToPathParams {
+    convert_arcs: bool,
+    float_precision: Option<usize>,
+}
+
+fn convert_shape_to_path(doc: &mut Document, params: Option<&Value>) {
+    let params = convert_shape_to_path_params(params);
+    let mut remove_ids = Vec::new();
+
+    for node_id in 1..doc.nodes.len() {
+        let Some(element_name) = node_element_name(doc, node_id).map(str::to_string) else {
+            continue;
+        };
+
+        let replacement = match element_name.as_str() {
+            "rect" => rect_to_path(node_element(doc, node_id), params),
+            "line" => line_to_path(node_element(doc, node_id), params),
+            "polyline" => poly_shape_to_path(node_element(doc, node_id), false, params),
+            "polygon" => poly_shape_to_path(node_element(doc, node_id), true, params),
+            "circle" if params.convert_arcs => circle_to_path(node_element(doc, node_id), params),
+            "ellipse" if params.convert_arcs => ellipse_to_path(node_element(doc, node_id), params),
+            _ => None,
+        };
+
+        let Some(replacement) = replacement else {
+            continue;
+        };
+        match replacement {
+            ShapePathRewrite::Replace(d) => {
+                let NodeKind::Element(element) = &mut doc.node_mut(node_id).kind else {
+                    continue;
+                };
+                element.name = "path".to_string();
+                retain_non_shape_attributes(&mut element.attributes, element_name.as_str());
+                element.attributes.push(Attribute {
+                    name: "d".to_string(),
+                    value: d,
+                    quote: QuoteStyle::Double,
+                });
+            }
+            ShapePathRewrite::Remove => remove_ids.push(node_id),
+        }
+    }
+
+    for node_id in remove_ids {
+        detach_node(doc, node_id);
+    }
+}
+
+fn convert_shape_to_path_params(params: Option<&Value>) -> ConvertShapeToPathParams {
+    ConvertShapeToPathParams {
+        convert_arcs: json_bool(params, "convertArcs", false),
+        float_precision: json_usize_opt(params, "floatPrecision"),
+    }
+}
+
+enum ShapePathRewrite {
+    Replace(String),
+    Remove,
+}
+
+fn rect_to_path(
+    element: Option<&crate::ast::Element>,
+    params: ConvertShapeToPathParams,
+) -> Option<ShapePathRewrite> {
+    let element = element?;
+    if attribute_value(element.attributes.as_slice(), "width").is_none()
+        || attribute_value(element.attributes.as_slice(), "height").is_none()
+        || attribute_value(element.attributes.as_slice(), "rx").is_some()
+        || attribute_value(element.attributes.as_slice(), "ry").is_some()
+    {
+        return None;
+    }
+    let x = parse_plain_number(attribute_value(element.attributes.as_slice(), "x").unwrap_or("0"))?;
+    let y = parse_plain_number(attribute_value(element.attributes.as_slice(), "y").unwrap_or("0"))?;
+    let width = parse_plain_number(attribute_value(element.attributes.as_slice(), "width")?)?;
+    let height = parse_plain_number(attribute_value(element.attributes.as_slice(), "height")?)?;
+    Some(ShapePathRewrite::Replace(stringify_shape_path_data(
+        &[
+            ShapePathItem::new('M', vec![x, y]),
+            ShapePathItem::new('H', vec![x + width]),
+            ShapePathItem::new('V', vec![y + height]),
+            ShapePathItem::new('H', vec![x]),
+            ShapePathItem::new('z', Vec::new()),
+        ],
+        params.float_precision,
+        false,
+    )))
+}
+
+fn line_to_path(
+    element: Option<&crate::ast::Element>,
+    params: ConvertShapeToPathParams,
+) -> Option<ShapePathRewrite> {
+    let element = element?;
+    let x1 = parse_plain_number(attribute_value(element.attributes.as_slice(), "x1").unwrap_or("0"))?;
+    let y1 = parse_plain_number(attribute_value(element.attributes.as_slice(), "y1").unwrap_or("0"))?;
+    let x2 = parse_plain_number(attribute_value(element.attributes.as_slice(), "x2").unwrap_or("0"))?;
+    let y2 = parse_plain_number(attribute_value(element.attributes.as_slice(), "y2").unwrap_or("0"))?;
+    Some(ShapePathRewrite::Replace(stringify_shape_path_data(
+        &[
+            ShapePathItem::new('M', vec![x1, y1]),
+            ShapePathItem::new('L', vec![x2, y2]),
+        ],
+        params.float_precision,
+        false,
+    )))
+}
+
+fn poly_shape_to_path(
+    element: Option<&crate::ast::Element>,
+    close: bool,
+    params: ConvertShapeToPathParams,
+) -> Option<ShapePathRewrite> {
+    let element = element?;
+    let points = attribute_value(element.attributes.as_slice(), "points")?;
+    let coords = extract_number_list(points);
+    if coords.len() < 4 {
+        return Some(ShapePathRewrite::Remove);
+    }
+    let mut items = Vec::new();
+    for (index, chunk) in coords.chunks(2).enumerate() {
+        if chunk.len() < 2 {
+            break;
+        }
+        items.push(ShapePathItem::new(
+            if index == 0 { 'M' } else { 'L' },
+            vec![chunk[0], chunk[1]],
+        ));
+    }
+    if close {
+        items.push(ShapePathItem::new('z', Vec::new()));
+    }
+    Some(ShapePathRewrite::Replace(stringify_shape_path_data(
+        &items,
+        params.float_precision,
+        false,
+    )))
+}
+
+fn circle_to_path(
+    element: Option<&crate::ast::Element>,
+    params: ConvertShapeToPathParams,
+) -> Option<ShapePathRewrite> {
+    let element = element?;
+    let cx = parse_plain_number(attribute_value(element.attributes.as_slice(), "cx").unwrap_or("0"))?;
+    let cy = parse_plain_number(attribute_value(element.attributes.as_slice(), "cy").unwrap_or("0"))?;
+    let r = parse_plain_number(attribute_value(element.attributes.as_slice(), "r").unwrap_or("0"))?;
+    Some(ShapePathRewrite::Replace(stringify_shape_path_data(
+        &[
+            ShapePathItem::new('M', vec![cx, cy - r]),
+            ShapePathItem::new('A', vec![r, r, 0.0, 1.0, 0.0, cx, cy + r]),
+            ShapePathItem::new('A', vec![r, r, 0.0, 1.0, 0.0, cx, cy - r]),
+            ShapePathItem::new('z', Vec::new()),
+        ],
+        params.float_precision,
+        false,
+    )))
+}
+
+fn ellipse_to_path(
+    element: Option<&crate::ast::Element>,
+    params: ConvertShapeToPathParams,
+) -> Option<ShapePathRewrite> {
+    let element = element?;
+    let cx = parse_plain_number(attribute_value(element.attributes.as_slice(), "cx").unwrap_or("0"))?;
+    let cy = parse_plain_number(attribute_value(element.attributes.as_slice(), "cy").unwrap_or("0"))?;
+    let rx = parse_plain_number(attribute_value(element.attributes.as_slice(), "rx").unwrap_or("0"))?;
+    let ry = parse_plain_number(attribute_value(element.attributes.as_slice(), "ry").unwrap_or("0"))?;
+    Some(ShapePathRewrite::Replace(stringify_shape_path_data(
+        &[
+            ShapePathItem::new('M', vec![cx, cy - ry]),
+            ShapePathItem::new('A', vec![rx, ry, 0.0, 1.0, 0.0, cx, cy + ry]),
+            ShapePathItem::new('A', vec![rx, ry, 0.0, 1.0, 0.0, cx, cy - ry]),
+            ShapePathItem::new('z', Vec::new()),
+        ],
+        params.float_precision,
+        false,
+    )))
+}
+
+#[derive(Debug, Clone)]
+struct ShapePathItem {
+    command: char,
+    args: Vec<f64>,
+}
+
+impl ShapePathItem {
+    const fn new(command: char, args: Vec<f64>) -> Self {
+        Self { command, args }
+    }
+}
+
+fn stringify_shape_path_data(
+    items: &[ShapePathItem],
+    precision: Option<usize>,
+    disable_space_after_flags: bool,
+) -> String {
+    if items.is_empty() {
+        return String::new();
+    }
+    if items.len() == 1 {
+        let item = &items[0];
+        return format!(
+            "{}{}",
+            item.command,
+            stringify_shape_args(item.command, &item.args, precision, disable_space_after_flags)
+        );
+    }
+
+    let mut result = String::new();
+    let mut previous = items[0].clone();
+    if items.get(1).is_some_and(|item| item.command == 'L') {
+        previous.command = 'M';
+    } else if items.get(1).is_some_and(|item| item.command == 'l') {
+        previous.command = 'm';
+    }
+
+    for (index, item) in items.iter().enumerate().skip(1) {
+        let merge = (previous.command == item.command && !matches!(previous.command, 'M' | 'm'))
+            || (previous.command == 'M' && item.command == 'L')
+            || (previous.command == 'm' && item.command == 'l');
+        if merge {
+            previous.args.extend(item.args.iter().copied());
+            if index == items.len() - 1 {
+                result.push(previous.command);
+                result.push_str(
+                    stringify_shape_args(
+                        previous.command,
+                        &previous.args,
+                        precision,
+                        disable_space_after_flags,
+                    )
+                    .as_str(),
+                );
+            }
+            continue;
+        }
+
+        result.push(previous.command);
+        result.push_str(
+            stringify_shape_args(
+                previous.command,
+                &previous.args,
+                precision,
+                disable_space_after_flags,
+            )
+            .as_str(),
+        );
+        if index == items.len() - 1 {
+            result.push(item.command);
+            result.push_str(
+                stringify_shape_args(
+                    item.command,
+                    &item.args,
+                    precision,
+                    disable_space_after_flags,
+                )
+                .as_str(),
+            );
+        } else {
+            previous = item.clone();
+        }
+    }
+    result
+}
+
+fn stringify_shape_args(
+    command: char,
+    args: &[f64],
+    precision: Option<usize>,
+    disable_space_after_flags: bool,
+) -> String {
+    let mut result = String::new();
+    let mut previous = None;
+    for (index, value) in args.iter().copied().enumerate() {
+        let rounded = precision.map_or(value, |precision| round_number(value, precision));
+        let rounded_str = remove_leading_zero(rounded);
+        let disable_spaces = disable_space_after_flags
+            && matches!(command, 'A' | 'a')
+            && (index % 7 == 4 || index % 7 == 5);
+        let needs_separator = !(disable_spaces
+            || index == 0
+            || rounded < 0.0
+            || (previous.is_some_and(|previous: f64| previous.fract() != 0.0)
+                && rounded_str.starts_with('.')));
+        if needs_separator {
+            result.push(' ');
+        }
+        result.push_str(rounded_str.as_str());
+        previous = Some(rounded);
+    }
+    result
+}
+
+fn parse_plain_number(value: &str) -> Option<f64> {
+    value.parse::<f64>().ok()
+}
+
+fn extract_number_list(value: &str) -> Vec<f64> {
+    let bytes = value.as_bytes();
+    let mut numbers = Vec::new();
+    let mut index = 0;
+    while index < bytes.len() {
+        while index < bytes.len()
+            && !matches!(bytes[index], b'+' | b'-' | b'.')
+            && !char::from(bytes[index]).is_ascii_digit()
+        {
+            index += 1;
+        }
+        if index >= bytes.len() {
+            break;
+        }
+        let start = index;
+        if matches!(bytes[index], b'+' | b'-') {
+            index += 1;
+        }
+        while index < bytes.len() && char::from(bytes[index]).is_ascii_digit() {
+            index += 1;
+        }
+        if bytes.get(index) == Some(&b'.') {
+            index += 1;
+            while index < bytes.len() && char::from(bytes[index]).is_ascii_digit() {
+                index += 1;
+            }
+        }
+        if matches!(bytes.get(index), Some(b'e' | b'E')) {
+            let exponent_start = index;
+            index += 1;
+            if matches!(bytes.get(index), Some(b'+' | b'-')) {
+                index += 1;
+            }
+            let exponent_digits_start = index;
+            while index < bytes.len() && char::from(bytes[index]).is_ascii_digit() {
+                index += 1;
+            }
+            if exponent_digits_start == index {
+                index = exponent_start;
+            }
+        }
+        if let Ok(number) = value[start..index].parse::<f64>() {
+            numbers.push(number);
+        }
+    }
+    numbers
+}
+
+fn retain_non_shape_attributes(attributes: &mut Vec<Attribute>, element_name: &str) {
+    attributes.retain(|attribute| {
+        !matches!(
+            (element_name, attribute.name.as_str()),
+            ("rect", "x" | "y" | "width" | "height")
+                | ("line", "x1" | "y1" | "x2" | "y2")
+                | ("polyline" | "polygon", "points")
+                | ("circle", "cx" | "cy" | "r")
+                | ("ellipse", "cx" | "cy" | "rx" | "ry")
+        )
+    });
 }
 
 fn convert_color_value(value: &str, params: &ConvertColorsParams, in_mask_subtree: bool) -> String {

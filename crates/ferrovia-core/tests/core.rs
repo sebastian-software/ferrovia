@@ -145,6 +145,11 @@ fn matches_svgo_oracle_for_convert_ellipse_to_circle() {
 }
 
 #[test]
+fn matches_svgo_oracle_for_convert_shape_to_path() {
+    assert_oracle_fixture("convert-shape-to-path");
+}
+
+#[test]
 fn matches_svgo_oracle_for_remove_hidden_elems() {
     assert_oracle_fixture("remove-hidden-elems");
 }
@@ -238,6 +243,21 @@ fn convert_ellipse_to_circle_rewrites_matching_radii() {
     assert_eq!(
         result.data,
         r#"<svg xmlns="http://www.w3.org/2000/svg"><circle cx="5" cy="5" r="10"/><ellipse rx="10" ry="12"/></svg>"#
+    );
+}
+
+#[test]
+fn convert_shape_to_path_removes_short_polyline() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><polyline points="0,0"/><polygon points="0,0 10,0 10,10"/></svg>"#;
+    let config = Config {
+        plugins: vec![PluginSpec::Name("convertShapeToPath".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0 10 0 10 10z"/></svg>"#
     );
 }
 
