@@ -515,11 +515,20 @@ fn convert_colors(doc: &mut Document, params: Option<&Value>) {
             continue;
         };
         for attribute in &mut element.attributes {
-            if !is_color_property(attribute.name.as_str()) {
-                continue;
+            if is_color_property(attribute.name.as_str()) {
+                attribute.value =
+                    convert_color_value(attribute.value.as_str(), &params, in_mask_subtree);
             }
-            attribute.value =
-                convert_color_value(attribute.value.as_str(), &params, in_mask_subtree);
+        }
+        if let Some(style_value) = attribute_value(element.attributes.as_slice(), "style") {
+            let mut declarations = parse_style_declarations(style_value);
+            for declaration in &mut declarations {
+                if is_color_property(declaration.name.as_str()) {
+                    declaration.value =
+                        convert_color_value(declaration.value.as_str(), &params, in_mask_subtree);
+                }
+            }
+            update_style_attribute(&mut element.attributes, &declarations);
         }
     }
 }
@@ -1901,6 +1910,7 @@ struct ConvertPathDataParams {
     line_shorthands: bool,
     remove_useless: bool,
     collapse_repeated: bool,
+    utilize_absolute: bool,
     leading_zero: bool,
     negative_extra_space: bool,
     no_space_after_flags: bool,
@@ -1945,6 +1955,9 @@ fn convert_path_data(doc: &mut Document, params: Option<&Value>) {
         if params.collapse_repeated && !has_marker_mid {
             collapse_repeated_path_items(&mut items);
         }
+        if params.utilize_absolute && !has_marker_mid {
+            utilize_absolute_path_items(&mut items, params);
+        }
 
         attribute.value = serialize_path_items(&items, params);
     }
@@ -1956,6 +1969,7 @@ fn convert_path_data_params(params: Option<&Value>) -> ConvertPathDataParams {
         line_shorthands: json_bool(params, "lineShorthands", true),
         remove_useless: json_bool(params, "removeUseless", true),
         collapse_repeated: json_bool(params, "collapseRepeated", true),
+        utilize_absolute: json_bool(params, "utilizeAbsolute", true),
         leading_zero: json_bool(params, "leadingZero", true),
         negative_extra_space: json_bool(params, "negativeExtraSpace", true),
         no_space_after_flags: json_bool(params, "noSpaceAfterFlags", false),
@@ -2201,7 +2215,6 @@ fn convert_path_to_relative(items: &mut [PathItem]) {
                 cursor_y += item.args[6];
             }
             'Z' | 'z' => {
-                item.command = 'z';
                 cursor_x = start_x;
                 cursor_y = start_y;
             }
@@ -2251,6 +2264,128 @@ fn collapse_repeated_path_items(items: &mut Vec<PathItem>) {
         collapsed.push(item);
     }
     *items = collapsed;
+}
+
+fn utilize_absolute_path_items(items: &mut [PathItem], params: ConvertPathDataParams) {
+    let mut cursor_x = 0.0;
+    let mut cursor_y = 0.0;
+    let mut start_x = 0.0;
+    let mut start_y = 0.0;
+
+    for (index, item) in items.iter_mut().enumerate() {
+        match item.command {
+            'M' => {
+                cursor_x = item.args[0];
+                cursor_y = item.args[1];
+                start_x = cursor_x;
+                start_y = cursor_y;
+            }
+            'm' => {
+                cursor_x += item.args[0];
+                cursor_y += item.args[1];
+                start_x = cursor_x;
+                start_y = cursor_y;
+            }
+            'l' => {
+                if item.args.len() != 2 {
+                    cursor_x += *item.args.last().unwrap_or(&0.0);
+                    cursor_y += *item.args.get(1).unwrap_or(&0.0);
+                    continue;
+                }
+                let abs_x = cursor_x + item.args[0];
+                let abs_y = cursor_y + item.args[1];
+                let absolute_args = [abs_x, abs_y];
+                if index > 0 && serialized_command_len('L', &absolute_args, params) < serialized_command_len('l', &item.args, params) {
+                    item.command = 'L';
+                    item.args[0] = abs_x;
+                    item.args[1] = abs_y;
+                }
+                cursor_x = abs_x;
+                cursor_y = abs_y;
+            }
+            'h' => {
+                if item.args.len() != 1 {
+                    cursor_x += item.args.iter().sum::<f64>();
+                    continue;
+                }
+                let abs_x = cursor_x + item.args[0];
+                let absolute_args = [abs_x];
+                if serialized_command_len('H', &absolute_args, params)
+                    < serialized_command_len('h', &item.args, params)
+                {
+                    item.command = 'H';
+                    item.args[0] = abs_x;
+                }
+                cursor_x = abs_x;
+            }
+            'v' => {
+                if item.args.len() != 1 {
+                    cursor_y += item.args.iter().sum::<f64>();
+                    continue;
+                }
+                let abs_y = cursor_y + item.args[0];
+                let absolute_args = [abs_y];
+                if serialized_command_len('V', &absolute_args, params)
+                    < serialized_command_len('v', &item.args, params)
+                {
+                    item.command = 'V';
+                    item.args[0] = abs_y;
+                }
+                cursor_y = abs_y;
+            }
+            'c' => {
+                cursor_x += item.args[4];
+                cursor_y += item.args[5];
+            }
+            's' | 'q' => {
+                cursor_x += item.args[2];
+                cursor_y += item.args[3];
+            }
+            't' => {
+                cursor_x += item.args[0];
+                cursor_y += item.args[1];
+            }
+            'a' => {
+                cursor_x += item.args[5];
+                cursor_y += item.args[6];
+            }
+            'L' | 'T' => {
+                cursor_x = item.args[0];
+                cursor_y = item.args[1];
+            }
+            'H' => cursor_x = item.args[0],
+            'V' => cursor_y = item.args[0],
+            'C' => {
+                cursor_x = item.args[4];
+                cursor_y = item.args[5];
+            }
+            'S' | 'Q' => {
+                cursor_x = item.args[2];
+                cursor_y = item.args[3];
+            }
+            'A' => {
+                cursor_x = item.args[5];
+                cursor_y = item.args[6];
+            }
+            'Z' | 'z' => {
+                cursor_x = start_x;
+                cursor_y = start_y;
+            }
+            _ => {}
+        }
+    }
+}
+
+fn serialized_command_len(command: char, args: &[f64], params: ConvertPathDataParams) -> usize {
+    1 + serialize_path_numbers(
+        args,
+        params.float_precision,
+        params.leading_zero,
+        params.negative_extra_space,
+        params.no_space_after_flags,
+        matches!(command, 'a' | 'A'),
+    )
+    .len()
 }
 
 fn serialize_path_items(items: &[PathItem], params: ConvertPathDataParams) -> String {
@@ -2493,6 +2628,7 @@ fn write_merged_path_data(
             line_shorthands: false,
             remove_useless: false,
             collapse_repeated: false,
+            utilize_absolute: false,
             leading_zero: true,
             negative_extra_space: true,
             no_space_after_flags: params.no_space_after_flags,

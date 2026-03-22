@@ -748,3 +748,18 @@ fn convert_path_data_preserves_repeated_commands_when_marker_mid_matches_stylesh
         )
     );
 }
+
+#[test]
+fn convert_path_data_utilizes_absolute_when_shorter() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0 L10 0 L10 10 L0 10 Z"/></svg>"#;
+    let config = Config {
+        plugins: vec![PluginSpec::Name("convertPathData".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0h10v10H0Z"/></svg>"#
+    );
+}
