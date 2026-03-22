@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use serde_json::Value;
 
@@ -7,8 +7,8 @@ use crate::config::{Config, PluginSpec};
 use crate::error::{FerroviaError, Result};
 use crate::geometry::{PathCommand, TransformOperation, parse_path_commands, parse_transform_operations};
 use crate::style::{
-    dedupe_declarations, parse_style_declarations, parse_stylesheet_rules, remove_declarations,
-    selector_matches, update_style_attribute,
+    StyleDeclaration, StylesheetRule, dedupe_declarations, parse_style_declarations,
+    parse_stylesheet_rules, remove_declarations, selector_matches, update_style_attribute,
 };
 
 const PRESET_DEFAULT: &[&str] = &[
@@ -20,6 +20,7 @@ const PRESET_DEFAULT: &[&str] = &[
     "removeEditorsNSData",
     "cleanupAttrs",
     "removeUselessDefs",
+    "removeUnknownsAndDefaults",
     "removeNonInheritableGroupAttrs",
     "removeUselessStrokeAndFill",
     "cleanupEnableBackground",
@@ -54,6 +55,7 @@ pub fn apply_plugins(doc: &mut Document, config: &Config) -> Result<()> {
             "removeEditorsNSData" => remove_editors_ns_data(doc, params.as_ref()),
             "cleanupAttrs" => cleanup_attrs(doc, params.as_ref()),
             "removeUselessDefs" => remove_useless_defs(doc),
+            "removeUnknownsAndDefaults" => remove_unknowns_and_defaults(doc, params.as_ref()),
             "removeNonInheritableGroupAttrs" => remove_non_inheritable_group_attrs(doc),
             "removeUselessStrokeAndFill" => remove_useless_stroke_and_fill(doc, params.as_ref()),
             "cleanupEnableBackground" => cleanup_enable_background(doc),
@@ -1548,6 +1550,135 @@ fn has_same_sign(left: f64, right: f64) -> bool {
     is_zero(left) || is_zero(right) || left.is_sign_positive() == right.is_sign_positive()
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "SVGO removeUnknownsAndDefaults parameters are boolean-heavy by design"
+)]
+#[derive(Debug, Clone, Copy)]
+struct RemoveUnknownsAndDefaultsParams {
+    unknown_content: bool,
+    unknown_attrs: bool,
+    default_attrs: bool,
+    default_markup_declarations: bool,
+    useless_overrides: bool,
+    keep_data_attrs: bool,
+    keep_aria_attrs: bool,
+    keep_role_attr: bool,
+}
+
+fn remove_unknowns_and_defaults(doc: &mut Document, params: Option<&Value>) {
+    let params = remove_unknowns_and_defaults_params(params);
+    if params.default_markup_declarations {
+        for node in &mut doc.nodes {
+            let NodeKind::XmlDecl(decl) = &mut node.kind else {
+                continue;
+            };
+            decl.attributes
+                .retain(|attribute| !(attribute.name == "standalone" && attribute.value == "no"));
+        }
+    }
+
+    let stylesheet = collect_semantic_stylesheet(doc);
+    let mut computed_styles = HashMap::<usize, HashMap<String, String>>::new();
+
+    for node_id in 1..doc.nodes.len() {
+        if is_in_foreign_object_subtree(doc, node_id) {
+            continue;
+        }
+
+        let Some(parent_id) = doc.node(node_id).parent else {
+            continue;
+        };
+        let Some(element_name) = node_element_name(doc, node_id).map(str::to_string) else {
+            continue;
+        };
+        if element_name.contains(':') || element_name == "foreignObject" {
+            continue;
+        }
+
+        if params.unknown_content && should_remove_unknown_child(doc, parent_id, element_name.as_str()) {
+            detach_node(doc, node_id);
+            continue;
+        }
+
+        let has_id = node_has_id(doc, node_id);
+        let computed_parent_style = if matches!(doc.node(parent_id).kind, NodeKind::Element(_)) {
+            compute_static_style(doc, parent_id, &stylesheet, &mut computed_styles)
+        } else {
+            HashMap::new()
+        };
+
+        let NodeKind::Element(element) = &mut doc.node_mut(node_id).kind else {
+            continue;
+        };
+        if !has_attribute_model(element.name.as_str()) {
+            continue;
+        }
+
+        element.attributes.retain(|attribute| {
+            if params.keep_data_attrs && attribute.name.starts_with("data-") {
+                return true;
+            }
+            if params.keep_aria_attrs && attribute.name.starts_with("aria-") {
+                return true;
+            }
+            if params.keep_role_attr && attribute.name == "role" {
+                return true;
+            }
+            if attribute.name == "xmlns" {
+                return true;
+            }
+            if let Some((prefix, _)) = attribute.name.split_once(':')
+                && prefix != "xml"
+                && prefix != "xlink"
+            {
+                return true;
+            }
+
+            if params.unknown_attrs
+                && !attribute_allowed_on_element(element.name.as_str(), attribute.name.as_str())
+            {
+                return false;
+            }
+
+            if params.default_attrs
+                && !has_id
+                && attribute_default_value(element.name.as_str(), attribute.name.as_str())
+                    == Some(attribute.value.as_str())
+                && !computed_parent_style.contains_key(attribute.name.as_str())
+                && !stylesheet_mentions_attr_selector(&stylesheet, attribute.name.as_str())
+            {
+                return false;
+            }
+
+            if params.useless_overrides
+                && !has_id
+                && !is_non_inheritable_group_presentation_attr(attribute.name.as_str())
+                && computed_parent_style
+                    .get(attribute.name.as_str())
+                    .is_some_and(|value| value == &attribute.value)
+            {
+                return false;
+            }
+
+            true
+        });
+    }
+}
+
+fn remove_unknowns_and_defaults_params(params: Option<&Value>) -> RemoveUnknownsAndDefaultsParams {
+    RemoveUnknownsAndDefaultsParams {
+        unknown_content: json_bool(params, "unknownContent", true),
+        unknown_attrs: json_bool(params, "unknownAttrs", true),
+        default_attrs: json_bool(params, "defaultAttrs", true),
+        default_markup_declarations: json_bool(params, "defaultMarkupDeclarations", true),
+        useless_overrides: json_bool(params, "uselessOverrides", true),
+        keep_data_attrs: json_bool(params, "keepDataAttrs", true),
+        keep_aria_attrs: json_bool(params, "keepAriaAttrs", true),
+        keep_role_attr: json_bool(params, "keepRoleAttr", false),
+    }
+}
+
 fn remove_non_inheritable_group_attrs(doc: &mut Document) {
     for node in &mut doc.nodes {
         let NodeKind::Element(element) = &mut node.kind else {
@@ -2923,6 +3054,786 @@ fn is_presentation_attr(name: &str) -> bool {
             | "word-spacing"
             | "writing-mode"
     )
+}
+
+fn is_core_attr(name: &str) -> bool {
+    matches!(name, "id" | "tabindex" | "xml:base" | "xml:lang" | "xml:space")
+}
+
+fn is_conditional_processing_attr(name: &str) -> bool {
+    matches!(name, "requiredExtensions" | "requiredFeatures" | "systemLanguage")
+}
+
+fn is_graphical_event_attr(name: &str) -> bool {
+    matches!(
+        name,
+        "onactivate"
+            | "onclick"
+            | "onfocusin"
+            | "onfocusout"
+            | "onload"
+            | "onmousedown"
+            | "onmousemove"
+            | "onmouseout"
+            | "onmouseover"
+            | "onmouseup"
+    )
+}
+
+fn is_document_event_attr(name: &str) -> bool {
+    matches!(
+        name,
+        "onabort" | "onerror" | "onresize" | "onscroll" | "onunload" | "onzoom"
+    )
+}
+
+fn is_xlink_attr(name: &str) -> bool {
+    matches!(
+        name,
+        "xlink:actuate"
+            | "xlink:arcrole"
+            | "xlink:href"
+            | "xlink:role"
+            | "xlink:show"
+            | "xlink:title"
+            | "xlink:type"
+    )
+}
+
+fn is_presentation_default_attr(name: &str) -> bool {
+    matches!(
+        name,
+        "clip"
+            | "clip-path"
+            | "clip-rule"
+            | "mask"
+            | "opacity"
+            | "stop-color"
+            | "stop-opacity"
+            | "fill-opacity"
+            | "fill-rule"
+            | "fill"
+            | "stroke"
+            | "stroke-width"
+            | "stroke-linecap"
+            | "stroke-linejoin"
+            | "stroke-miterlimit"
+            | "stroke-dasharray"
+            | "stroke-dashoffset"
+            | "stroke-opacity"
+            | "paint-order"
+            | "vector-effect"
+            | "display"
+            | "visibility"
+            | "marker-start"
+            | "marker-mid"
+            | "marker-end"
+            | "color-interpolation"
+            | "color-interpolation-filters"
+            | "color-rendering"
+            | "shape-rendering"
+            | "text-rendering"
+            | "image-rendering"
+            | "font-style"
+            | "font-variant"
+            | "font-weight"
+            | "font-stretch"
+            | "font-size"
+            | "font-size-adjust"
+            | "letter-spacing"
+            | "word-spacing"
+            | "text-decoration"
+            | "text-anchor"
+            | "text-overflow"
+            | "writing-mode"
+            | "glyph-orientation-vertical"
+            | "glyph-orientation-horizontal"
+            | "direction"
+            | "unicode-bidi"
+            | "dominant-baseline"
+            | "alignment-baseline"
+            | "baseline-shift"
+    )
+}
+
+#[expect(
+    clippy::match_same_arms,
+    reason = "Default-value lookup tables are intentionally expressed as direct grouped matches"
+)]
+fn presentation_default_value(name: &str) -> Option<&'static str> {
+    match name {
+        "clip" => Some("auto"),
+        "clip-path" => Some("none"),
+        "clip-rule" => Some("nonzero"),
+        "mask" => Some("none"),
+        "opacity" => Some("1"),
+        "stop-color" => Some("#000"),
+        "stop-opacity" => Some("1"),
+        "fill-opacity" => Some("1"),
+        "fill-rule" => Some("nonzero"),
+        "fill" => Some("#000"),
+        "stroke" => Some("none"),
+        "stroke-width" => Some("1"),
+        "stroke-linecap" => Some("butt"),
+        "stroke-linejoin" => Some("miter"),
+        "stroke-miterlimit" => Some("4"),
+        "stroke-dasharray" => Some("none"),
+        "stroke-dashoffset" => Some("0"),
+        "stroke-opacity" => Some("1"),
+        "paint-order" => Some("normal"),
+        "vector-effect" => Some("none"),
+        "display" => Some("inline"),
+        "visibility" => Some("visible"),
+        "marker-start" => Some("none"),
+        "marker-mid" => Some("none"),
+        "marker-end" => Some("none"),
+        "color-interpolation" => Some("sRGB"),
+        "color-interpolation-filters" => Some("linearRGB"),
+        "color-rendering" => Some("auto"),
+        "shape-rendering" => Some("auto"),
+        "text-rendering" => Some("auto"),
+        "image-rendering" => Some("auto"),
+        "font-style" => Some("normal"),
+        "font-variant" => Some("normal"),
+        "font-weight" => Some("normal"),
+        "font-stretch" => Some("normal"),
+        "font-size" => Some("medium"),
+        "font-size-adjust" => Some("none"),
+        "letter-spacing" => Some("normal"),
+        "word-spacing" => Some("normal"),
+        "text-decoration" => Some("none"),
+        "text-anchor" => Some("start"),
+        "text-overflow" => Some("clip"),
+        "writing-mode" => Some("lr-tb"),
+        "glyph-orientation-vertical" => Some("auto"),
+        "glyph-orientation-horizontal" => Some("0deg"),
+        "direction" => Some("ltr"),
+        "unicode-bidi" => Some("normal"),
+        "dominant-baseline" => Some("auto"),
+        "alignment-baseline" => Some("baseline"),
+        "baseline-shift" => Some("baseline"),
+        _ => None,
+    }
+}
+
+fn is_non_inheritable_group_presentation_attr(name: &str) -> bool {
+    is_presentation_attr(name)
+        && !is_inheritable_attr(name)
+        && !is_preserved_group_presentation_attr(name)
+}
+
+fn is_known_svg_element(name: &str) -> bool {
+    matches!(
+        name,
+        "a"
+            | "altGlyph"
+            | "altGlyphDef"
+            | "altGlyphItem"
+            | "animate"
+            | "animateColor"
+            | "animateMotion"
+            | "animateTransform"
+            | "circle"
+            | "clipPath"
+            | "color-profile"
+            | "cursor"
+            | "defs"
+            | "desc"
+            | "ellipse"
+            | "feBlend"
+            | "feColorMatrix"
+            | "feComponentTransfer"
+            | "feComposite"
+            | "feConvolveMatrix"
+            | "feDiffuseLighting"
+            | "feDisplacementMap"
+            | "feDistantLight"
+            | "feDropShadow"
+            | "feFlood"
+            | "feFuncA"
+            | "feFuncB"
+            | "feFuncG"
+            | "feFuncR"
+            | "feGaussianBlur"
+            | "feImage"
+            | "feMerge"
+            | "feMergeNode"
+            | "feMorphology"
+            | "feOffset"
+            | "fePointLight"
+            | "feSpecularLighting"
+            | "feSpotLight"
+            | "feTile"
+            | "feTurbulence"
+            | "filter"
+            | "font"
+            | "font-face"
+            | "font-face-format"
+            | "font-face-name"
+            | "font-face-src"
+            | "font-face-uri"
+            | "foreignObject"
+            | "g"
+            | "glyph"
+            | "hkern"
+            | "image"
+            | "line"
+            | "linearGradient"
+            | "marker"
+            | "mask"
+            | "metadata"
+            | "missing-glyph"
+            | "mpath"
+            | "path"
+            | "pattern"
+            | "polygon"
+            | "polyline"
+            | "radialGradient"
+            | "rect"
+            | "script"
+            | "set"
+            | "solidColor"
+            | "stop"
+            | "style"
+            | "svg"
+            | "switch"
+            | "symbol"
+            | "text"
+            | "textPath"
+            | "title"
+            | "tref"
+            | "tspan"
+            | "use"
+            | "view"
+            | "vkern"
+    )
+}
+
+fn explicit_allowed_children(parent_name: &str) -> Option<&'static [&'static str]> {
+    const ANIMATION_DESCRIPTIVE_CHILDREN: &[&str] = &[
+        "animate",
+        "animateColor",
+        "animateMotion",
+        "animateTransform",
+        "desc",
+        "metadata",
+        "set",
+        "title",
+    ];
+    const SVG_GROUP_CHILDREN: &[&str] = &[
+        "a",
+        "altGlyphDef",
+        "animate",
+        "animateColor",
+        "animateMotion",
+        "animateTransform",
+        "circle",
+        "clipPath",
+        "color-profile",
+        "cursor",
+        "defs",
+        "desc",
+        "ellipse",
+        "filter",
+        "foreignObject",
+        "g",
+        "image",
+        "line",
+        "linearGradient",
+        "marker",
+        "mask",
+        "metadata",
+        "path",
+        "pattern",
+        "polygon",
+        "polyline",
+        "radialGradient",
+        "rect",
+        "script",
+        "set",
+        "solidColor",
+        "style",
+        "svg",
+        "switch",
+        "symbol",
+        "text",
+        "title",
+        "use",
+        "view",
+    ];
+
+    match parent_name {
+        "svg" | "g" | "defs" | "symbol" => Some(SVG_GROUP_CHILDREN),
+        "circle" | "ellipse" | "line" | "path" | "polygon" | "polyline" | "rect" => {
+            Some(ANIMATION_DESCRIPTIVE_CHILDREN)
+        }
+        _ => None,
+    }
+}
+
+fn should_remove_unknown_child(doc: &Document, parent_id: usize, child_name: &str) -> bool {
+    let Some(parent_name) = node_element_name(doc, parent_id) else {
+        return false;
+    };
+    if parent_name.contains(':') || parent_name == "foreignObject" {
+        return false;
+    }
+    if let Some(allowed) = explicit_allowed_children(parent_name) {
+        return !allowed.contains(&child_name);
+    }
+    !is_known_svg_element(child_name)
+}
+
+fn has_attribute_model(name: &str) -> bool {
+    matches!(
+        name,
+        "svg"
+            | "g"
+            | "rect"
+            | "path"
+            | "circle"
+            | "ellipse"
+            | "line"
+            | "polygon"
+            | "polyline"
+            | "style"
+            | "defs"
+            | "symbol"
+            | "use"
+            | "text"
+            | "tspan"
+            | "textPath"
+            | "image"
+            | "marker"
+            | "mask"
+            | "pattern"
+            | "linearGradient"
+            | "radialGradient"
+            | "stop"
+            | "clipPath"
+            | "filter"
+    )
+}
+
+fn element_allows_presentation(name: &str) -> bool {
+    !matches!(name, "style" | "script")
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "The attribute-allowlist table is clearer as one element-to-attrs mapping"
+)]
+fn attribute_allowed_on_element(element_name: &str, attr_name: &str) -> bool {
+    if is_core_attr(attr_name) {
+        return true;
+    }
+    if is_presentation_attr(attr_name) && element_allows_presentation(element_name) {
+        return true;
+    }
+    if is_conditional_processing_attr(attr_name)
+        && matches!(
+            element_name,
+            "svg"
+                | "g"
+                | "rect"
+                | "path"
+                | "circle"
+                | "ellipse"
+                | "line"
+                | "polygon"
+                | "polyline"
+                | "foreignObject"
+                | "text"
+                | "use"
+                | "image"
+                | "marker"
+                | "mask"
+                | "pattern"
+                | "linearGradient"
+                | "radialGradient"
+                | "clipPath"
+                | "filter"
+        )
+    {
+        return true;
+    }
+    if is_graphical_event_attr(attr_name)
+        && matches!(
+            element_name,
+            "svg"
+                | "g"
+                | "rect"
+                | "path"
+                | "circle"
+                | "ellipse"
+                | "line"
+                | "polygon"
+                | "polyline"
+                | "foreignObject"
+                | "text"
+                | "use"
+                | "image"
+        )
+    {
+        return true;
+    }
+    if element_name == "svg" && is_document_event_attr(attr_name) {
+        return true;
+    }
+    if is_xlink_attr(attr_name)
+        && matches!(
+            element_name,
+            "a" | "image" | "linearGradient" | "radialGradient" | "pattern" | "script" | "use"
+        )
+    {
+        return true;
+    }
+
+    match element_name {
+        "svg" => matches!(
+            attr_name,
+            "baseProfile"
+                | "class"
+                | "contentScriptType"
+                | "contentStyleType"
+                | "height"
+                | "preserveAspectRatio"
+                | "style"
+                | "version"
+                | "viewBox"
+                | "width"
+                | "x"
+                | "y"
+                | "zoomAndPan"
+        ),
+        "g" | "defs" | "symbol" => {
+            matches!(attr_name, "class" | "externalResourcesRequired" | "style" | "transform")
+        }
+        "rect" => matches!(
+            attr_name,
+            "class"
+                | "externalResourcesRequired"
+                | "height"
+                | "rx"
+                | "ry"
+                | "style"
+                | "transform"
+                | "width"
+                | "x"
+                | "y"
+        ),
+        "path" => matches!(
+            attr_name,
+            "class" | "d" | "externalResourcesRequired" | "pathLength" | "style" | "transform"
+        ),
+        "circle" => matches!(
+            attr_name,
+            "class" | "cx" | "cy" | "externalResourcesRequired" | "r" | "style" | "transform"
+        ),
+        "ellipse" => matches!(
+            attr_name,
+            "class"
+                | "cx"
+                | "cy"
+                | "externalResourcesRequired"
+                | "rx"
+                | "ry"
+                | "style"
+                | "transform"
+        ),
+        "line" => matches!(
+            attr_name,
+            "class"
+                | "externalResourcesRequired"
+                | "style"
+                | "transform"
+                | "x1"
+                | "x2"
+                | "y1"
+                | "y2"
+        ),
+        "polygon" | "polyline" => matches!(
+            attr_name,
+            "class" | "externalResourcesRequired" | "points" | "style" | "transform"
+        ),
+        "style" => matches!(attr_name, "media" | "title" | "type"),
+        "use" => matches!(
+            attr_name,
+            "class"
+                | "externalResourcesRequired"
+                | "height"
+                | "href"
+                | "style"
+                | "transform"
+                | "width"
+                | "x"
+                | "xlink:href"
+                | "y"
+        ),
+        "text" => matches!(
+            attr_name,
+            "class"
+                | "dx"
+                | "dy"
+                | "lengthAdjust"
+                | "rotate"
+                | "style"
+                | "textLength"
+                | "transform"
+                | "x"
+                | "y"
+        ),
+        "tspan" | "textPath" => matches!(
+            attr_name,
+            "class"
+                | "dx"
+                | "dy"
+                | "href"
+                | "lengthAdjust"
+                | "rotate"
+                | "startOffset"
+                | "style"
+                | "textLength"
+                | "x"
+                | "xlink:href"
+                | "y"
+        ),
+        "image" => matches!(
+            attr_name,
+            "class"
+                | "externalResourcesRequired"
+                | "height"
+                | "href"
+                | "preserveAspectRatio"
+                | "style"
+                | "transform"
+                | "width"
+                | "x"
+                | "xlink:href"
+                | "y"
+        ),
+        "marker" => matches!(
+            attr_name,
+            "class"
+                | "markerHeight"
+                | "markerUnits"
+                | "markerWidth"
+                | "orient"
+                | "preserveAspectRatio"
+                | "refX"
+                | "refY"
+                | "style"
+                | "viewBox"
+        ),
+        "mask" => matches!(
+            attr_name,
+            "class"
+                | "height"
+                | "maskContentUnits"
+                | "maskUnits"
+                | "style"
+                | "width"
+                | "x"
+                | "y"
+        ),
+        "pattern" => matches!(
+            attr_name,
+            "class"
+                | "height"
+                | "href"
+                | "patternContentUnits"
+                | "patternTransform"
+                | "patternUnits"
+                | "preserveAspectRatio"
+                | "style"
+                | "viewBox"
+                | "width"
+                | "x"
+                | "xlink:href"
+                | "y"
+        ),
+        "linearGradient" => matches!(
+            attr_name,
+            "class"
+                | "gradientTransform"
+                | "gradientUnits"
+                | "href"
+                | "spreadMethod"
+                | "style"
+                | "x1"
+                | "x2"
+                | "xlink:href"
+                | "y1"
+                | "y2"
+        ),
+        "radialGradient" => matches!(
+            attr_name,
+            "class"
+                | "cx"
+                | "cy"
+                | "fr"
+                | "fx"
+                | "fy"
+                | "gradientTransform"
+                | "gradientUnits"
+                | "href"
+                | "r"
+                | "spreadMethod"
+                | "style"
+                | "xlink:href"
+        ),
+        "stop" => matches!(attr_name, "class" | "offset" | "path" | "style"),
+        "clipPath" => matches!(
+            attr_name,
+            "class" | "clipPathUnits" | "externalResourcesRequired" | "style" | "transform"
+        ),
+        "filter" => matches!(
+            attr_name,
+            "class"
+                | "externalResourcesRequired"
+                | "filterRes"
+                | "filterUnits"
+                | "height"
+                | "primitiveUnits"
+                | "style"
+                | "width"
+                | "x"
+                | "y"
+        ),
+        _ => false,
+    }
+}
+
+#[expect(
+    clippy::match_same_arms,
+    reason = "Element default lookup tables are intentionally expressed as direct grouped matches"
+)]
+fn attribute_default_value(element_name: &str, attr_name: &str) -> Option<&'static str> {
+    if attr_name == "xml:space" {
+        return Some("default");
+    }
+    if is_presentation_default_attr(attr_name) && element_allows_presentation(element_name) {
+        return presentation_default_value(attr_name);
+    }
+    match (element_name, attr_name) {
+        ("style", "type") => Some("text/css"),
+        ("svg", "x") => Some("0"),
+        ("svg", "y") => Some("0"),
+        ("svg", "width") => Some("100%"),
+        ("svg", "height") => Some("100%"),
+        ("svg", "preserveAspectRatio") => Some("xMidYMid meet"),
+        ("svg", "zoomAndPan") => Some("magnify"),
+        ("svg", "version") => Some("1.1"),
+        ("svg", "baseProfile") => Some("none"),
+        ("svg", "contentScriptType") => Some("application/ecmascript"),
+        ("svg", "contentStyleType") => Some("text/css"),
+        ("rect", "x") => Some("0"),
+        ("rect", "y") => Some("0"),
+        _ => None,
+    }
+}
+
+fn is_in_foreign_object_subtree(doc: &Document, node_id: usize) -> bool {
+    let mut current = Some(node_id);
+    while let Some(id) = current {
+        let Some(element) = node_element(doc, id) else {
+            current = doc.node(id).parent;
+            continue;
+        };
+        if element.name == "foreignObject" {
+            return true;
+        }
+        current = doc.node(id).parent;
+    }
+    false
+}
+
+fn collect_semantic_stylesheet(doc: &Document) -> Vec<StylesheetRule> {
+    let mut rules = Vec::new();
+    for node_id in 1..doc.nodes.len() {
+        let Some(element) = node_element(doc, node_id) else {
+            continue;
+        };
+        if element.name != "style" || is_in_foreign_object_subtree(doc, node_id) {
+            continue;
+        }
+        for child_id in doc.children(node_id) {
+            let NodeKind::Text(text) = &doc.node(child_id).kind else {
+                continue;
+            };
+            rules.extend(parse_stylesheet_rules(text));
+        }
+    }
+    rules
+}
+
+fn stylesheet_mentions_attr_selector(stylesheet: &[StylesheetRule], name: &str) -> bool {
+    let pattern = format!("[{name}");
+    stylesheet
+        .iter()
+        .any(|rule| rule.selector.contains(pattern.as_str()))
+}
+
+fn compute_static_style(
+    doc: &Document,
+    node_id: usize,
+    stylesheet: &[StylesheetRule],
+    cache: &mut HashMap<usize, HashMap<String, String>>,
+) -> HashMap<String, String> {
+    if let Some(cached) = cache.get(&node_id) {
+        return cached.clone();
+    }
+
+    let mut style = HashMap::new();
+    let Some(element) = node_element(doc, node_id) else {
+        return style;
+    };
+
+    if let Some(parent_id) = doc.node(node_id).parent
+        && matches!(doc.node(parent_id).kind, NodeKind::Element(_))
+    {
+        for (name, value) in compute_static_style(doc, parent_id, stylesheet, cache) {
+            if is_inheritable_attr(name.as_str()) {
+                style.insert(name, value);
+            }
+        }
+    }
+
+    for attribute in &element.attributes {
+        if is_presentation_attr(attribute.name.as_str()) {
+            style.insert(attribute.name.clone(), attribute.value.clone());
+        }
+    }
+
+    let mut matched_rules = stylesheet
+        .iter()
+        .enumerate()
+        .filter(|(_, rule)| selector_matches(doc, node_id, rule.selector.as_str()))
+        .collect::<Vec<_>>();
+    matched_rules.sort_by(|(left_index, left), (right_index, right)| {
+        left.specificity
+            .cmp(&right.specificity)
+            .then(left_index.cmp(right_index))
+    });
+    for (_, rule) in matched_rules {
+        apply_style_declarations(&mut style, &rule.declarations);
+    }
+
+    if let Some(style_attr) = attribute_value(element.attributes.as_slice(), "style") {
+        apply_style_declarations(&mut style, &parse_style_declarations(style_attr));
+    }
+
+    cache.insert(node_id, style.clone());
+    style
+}
+
+fn apply_style_declarations(
+    target: &mut HashMap<String, String>,
+    declarations: &[StyleDeclaration],
+) {
+    for declaration in declarations {
+        target.insert(declaration.name.clone(), declaration.value.clone());
+    }
 }
 
 fn is_preserved_group_presentation_attr(name: &str) -> bool {

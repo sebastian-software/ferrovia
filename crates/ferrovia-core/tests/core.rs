@@ -105,6 +105,11 @@ fn matches_svgo_oracle_for_remove_useless_stroke_and_fill() {
 }
 
 #[test]
+fn matches_svgo_oracle_for_remove_unknowns_and_defaults() {
+    assert_oracle_fixture("remove-unknowns-and-defaults");
+}
+
+#[test]
 fn matches_svgo_oracle_for_convert_transform() {
     assert_oracle_fixture("convert-transform");
 }
@@ -357,6 +362,33 @@ fn remove_useless_stroke_and_fill_removes_shape_when_remove_none_is_enabled() {
 
     let result = optimize(svg, &config).expect("optimize");
     assert_eq!(result.data, r#"<svg xmlns="http://www.w3.org/2000/svg"/>"#);
+}
+
+#[test]
+fn remove_unknowns_and_defaults_removes_root_defaults_and_unknown_svg_content() {
+    let svg = r#"<?xml version="1.0" standalone="no"?><svg xmlns="http://www.w3.org/2000/svg" x="0" y="0" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" zoomAndPan="magnify" version="1.1" baseProfile="none" contentScriptType="application/ecmascript" contentStyleType="text/css" foo="bar"><g bogus="1"><unknown-child/><rect x="0" y="0" width="1" height="1"/></g></svg>"#;
+    let config = Config {
+        plugins: vec![PluginSpec::Name("removeUnknownsAndDefaults".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><g><rect width="1" height="1"/></g></svg>"#
+    );
+}
+
+#[test]
+fn remove_unknowns_and_defaults_preserves_foreign_object_subtree_and_data_attrs() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><foreignObject x="0" y="0" width="10" height="10" unknown="x"><div xmlns="http://www.w3.org/1999/xhtml" data-test="1" foo="bar"><span aria-hidden="true">Hi</span></div></foreignObject></svg>"#;
+    let config = Config {
+        plugins: vec![PluginSpec::Name("removeUnknownsAndDefaults".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(result.data, svg);
 }
 
 #[test]
