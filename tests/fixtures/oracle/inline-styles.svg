@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <style>.hero{fill:red;stroke:none}#badge{opacity:1}</style>
+  <rect class="hero" width="10" height="10"/>
+  <circle id="badge" r="5"/>
+</svg>

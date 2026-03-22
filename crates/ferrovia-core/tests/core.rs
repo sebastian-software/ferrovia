@@ -115,6 +115,21 @@ fn matches_svgo_oracle_for_merge_styles() {
 }
 
 #[test]
+fn matches_svgo_oracle_for_inline_styles() {
+    assert_oracle_fixture("inline-styles");
+}
+
+#[test]
+fn matches_svgo_oracle_for_minify_styles() {
+    assert_oracle_fixture("minify-styles");
+}
+
+#[test]
+fn matches_svgo_oracle_for_cleanup_ids() {
+    assert_oracle_fixture("cleanup-ids");
+}
+
+#[test]
 fn matches_svgo_oracle_for_remove_hidden_elems() {
     assert_oracle_fixture("remove-hidden-elems");
 }
@@ -127,6 +142,39 @@ fn matches_svgo_oracle_for_convert_transform() {
 #[test]
 fn matches_svgo_oracle_for_convert_path_data() {
     assert_oracle_fixture("convert-path-data");
+}
+
+#[test]
+fn inline_styles_leaves_multi_match_selector_by_default() {
+    let svg = concat!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><style>.hero{fill:red}</style>"#,
+        r#"<rect class="hero" width="10" height="10"/><circle class="hero" r="5"/></svg>"#
+    );
+    let config = Config {
+        plugins: vec![PluginSpec::Name("inlineStyles".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><rect class="hero" width="10" height="10"/><circle class="hero" r="5"/></svg>"#
+    );
+}
+
+#[test]
+fn cleanup_ids_rewrites_begin_references() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><path id="shape" d="M0 0"/><animate begin="shape.begin"/></svg>"#;
+    let config = Config {
+        plugins: vec![PluginSpec::Name("cleanupIds".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><path id="a" d="M0 0"/><animate begin="a.begin"/></svg>"#
+    );
 }
 
 fn assert_oracle_fixture(name: &str) {

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <path id="shape" d="M0 0"/>
+    <path id="unused" d="M1 1"/>
+  </defs>
+  <use href="#shape"/>
+  <animate begin="shape.begin"/>
+</svg>
