@@ -2266,6 +2266,10 @@ fn collapse_repeated_path_items(items: &mut Vec<PathItem>) {
     *items = collapsed;
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "The mixed absolute-relative rewrite mirrors SVGO path heuristics in one pass"
+)]
 fn utilize_absolute_path_items(items: &mut [PathItem], params: ConvertPathDataParams) {
     let mut cursor_x = 0.0;
     let mut cursor_y = 0.0;
@@ -4466,6 +4470,9 @@ fn remove_unused_ns(doc: &mut Document) {
     }
 
     for (id, node) in doc.nodes.iter().enumerate().skip(1) {
+        if id != root_id && !node_is_attached_to_root(doc, root_id, id) {
+            continue;
+        }
         let NodeKind::Element(element) = &node.kind else {
             continue;
         };
@@ -4490,6 +4497,17 @@ fn remove_unused_ns(doc: &mut Document) {
             .strip_prefix("xmlns:")
             .is_none_or(|prefix| !unused.contains(prefix))
     });
+}
+
+fn node_is_attached_to_root(doc: &Document, root_id: usize, node_id: usize) -> bool {
+    let mut current = Some(node_id);
+    while let Some(id) = current {
+        if id == root_id {
+            return true;
+        }
+        current = doc.node(id).parent;
+    }
+    false
 }
 
 fn remove_editors_ns_data(doc: &mut Document, params: Option<&Value>) {

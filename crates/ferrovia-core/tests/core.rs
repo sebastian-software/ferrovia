@@ -358,6 +358,28 @@ fn preset_default_runs_merge_paths() {
 }
 
 #[test]
+fn remove_unused_ns_ignores_detached_prefixed_attrs() {
+    let svg = concat!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">"#,
+        r#"<defs><font-face><font-face-src><font-face-uri xlink:href="font.svg#ascii"/></font-face-src></font-face></defs>"#,
+        r#"<rect width="10" height="10"/></svg>"#
+    );
+    let config = Config {
+        plugins: vec![
+            PluginSpec::Name("removeUselessDefs".to_string()),
+            PluginSpec::Name("removeUnusedNS".to_string()),
+        ],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>"#
+    );
+}
+
+#[test]
 fn sort_attrs_supports_alphabetical_xmlns_order() {
     let svg = r#"<svg foo="bar" xmlns="http://www.w3.org/2000/svg" height="10" baz="quux" width="10" hello="world"><rect x="0" y="0" width="100" height="100" stroke-width="1" stroke-linejoin="round" fill="red" stroke="orange" xmlns="http://www.w3.org/2000/svg"/></svg>"#;
     let config = Config {
