@@ -59,6 +59,7 @@ pub fn apply_plugins(doc: &mut Document, config: &Config) -> Result<()> {
             "removeNonInheritableGroupAttrs" => remove_non_inheritable_group_attrs(doc),
             "removeUselessStrokeAndFill" => remove_useless_stroke_and_fill(doc, params.as_ref()),
             "cleanupEnableBackground" => cleanup_enable_background(doc),
+            "removeHiddenElems" => remove_hidden_elems(doc, params.as_ref()),
             "removeEmptyText" => remove_empty_text(doc, params.as_ref()),
             "convertTransform" => convert_transform(doc, params.as_ref()),
             "convertPathData" => convert_path_data(doc, params.as_ref()),
@@ -1676,6 +1677,127 @@ fn remove_unknowns_and_defaults_params(params: Option<&Value>) -> RemoveUnknowns
         keep_data_attrs: json_bool(params, "keepDataAttrs", true),
         keep_aria_attrs: json_bool(params, "keepAriaAttrs", true),
         keep_role_attr: json_bool(params, "keepRoleAttr", false),
+    }
+}
+
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "SVGO removeHiddenElems parameters are boolean-heavy by design"
+)]
+#[derive(Debug, Clone, Copy)]
+struct RemoveHiddenElemsParams {
+    is_hidden: bool,
+    display_none: bool,
+    circle_r0: bool,
+    ellipse_rx0: bool,
+    ellipse_ry0: bool,
+    rect_width0: bool,
+    rect_height0: bool,
+    pattern_width0: bool,
+    pattern_height0: bool,
+    image_width0: bool,
+    image_height0: bool,
+    path_empty_d: bool,
+    polyline_empty_points: bool,
+    polygon_empty_points: bool,
+}
+
+fn remove_hidden_elems(doc: &mut Document, params: Option<&Value>) {
+    let params = remove_hidden_elems_params(params);
+    let stylesheet = collect_semantic_stylesheet(doc);
+    let mut computed_styles = HashMap::<usize, HashMap<String, String>>::new();
+    let reference_ids = collect_reference_ids(doc);
+    let deoptimized_non_rendering = document_has_style_or_scripts(doc);
+
+    for node_id in 1..doc.nodes.len() {
+        let Some(element_name) = node_element_name(doc, node_id).map(str::to_string) else {
+            continue;
+        };
+
+        if !deoptimized_non_rendering
+            && is_non_rendering(element_name.as_str())
+            && can_remove_non_rendering_node(doc, node_id, &reference_ids)
+        {
+            detach_node(doc, node_id);
+            continue;
+        }
+
+        let computed_style = compute_static_style(doc, node_id, &stylesheet, &mut computed_styles);
+        let Some(element) = node_element(doc, node_id) else {
+            continue;
+        };
+
+        let should_remove = match element_name.as_str() {
+            "circle" if params.circle_r0 && doc.children(node_id).next().is_none() => {
+                attribute_value(element.attributes.as_slice(), "r") == Some("0")
+            }
+            "ellipse" if doc.children(node_id).next().is_none() => {
+                (params.ellipse_rx0
+                    && attribute_value(element.attributes.as_slice(), "rx") == Some("0"))
+                    || (params.ellipse_ry0
+                        && attribute_value(element.attributes.as_slice(), "ry") == Some("0"))
+            }
+            "rect" if doc.children(node_id).next().is_none() => {
+                (params.rect_width0
+                    && attribute_value(element.attributes.as_slice(), "width") == Some("0"))
+                    || (params.rect_height0
+                        && attribute_value(element.attributes.as_slice(), "height") == Some("0"))
+            }
+            "pattern" => {
+                (params.pattern_width0
+                    && attribute_value(element.attributes.as_slice(), "width") == Some("0"))
+                    || (params.pattern_height0
+                        && attribute_value(element.attributes.as_slice(), "height") == Some("0"))
+            }
+            "image" => {
+                (params.image_width0
+                    && attribute_value(element.attributes.as_slice(), "width") == Some("0"))
+                    || (params.image_height0
+                        && attribute_value(element.attributes.as_slice(), "height") == Some("0"))
+            }
+            "path" if params.path_empty_d => {
+                should_remove_path(element.attributes.as_slice(), &computed_style)
+            }
+            "polyline" if params.polyline_empty_points => {
+                attribute_value(element.attributes.as_slice(), "points").is_none()
+            }
+            "polygon" if params.polygon_empty_points => {
+                attribute_value(element.attributes.as_slice(), "points").is_none()
+            }
+            _ => false,
+        } || (params.is_hidden
+            && computed_style
+                .get("visibility")
+                .is_some_and(|value| value == "hidden")
+            && !has_visible_descendant_attr(doc, node_id))
+            || (params.display_none
+                && element_name != "marker"
+                && computed_style
+                    .get("display")
+                    .is_some_and(|value| value == "none"));
+
+        if should_remove {
+            detach_node(doc, node_id);
+        }
+    }
+}
+
+fn remove_hidden_elems_params(params: Option<&Value>) -> RemoveHiddenElemsParams {
+    RemoveHiddenElemsParams {
+        is_hidden: json_bool(params, "isHidden", true),
+        display_none: json_bool(params, "displayNone", true),
+        circle_r0: json_bool(params, "circleR0", true),
+        ellipse_rx0: json_bool(params, "ellipseRX0", true),
+        ellipse_ry0: json_bool(params, "ellipseRY0", true),
+        rect_width0: json_bool(params, "rectWidth0", true),
+        rect_height0: json_bool(params, "rectHeight0", true),
+        pattern_width0: json_bool(params, "patternWidth0", true),
+        pattern_height0: json_bool(params, "patternHeight0", true),
+        image_width0: json_bool(params, "imageWidth0", true),
+        image_height0: json_bool(params, "imageHeight0", true),
+        path_empty_d: json_bool(params, "pathEmptyD", true),
+        polyline_empty_points: json_bool(params, "polylineEmptyPoints", true),
+        polygon_empty_points: json_bool(params, "polygonEmptyPoints", true),
     }
 }
 
@@ -3834,6 +3956,92 @@ fn apply_style_declarations(
     for declaration in declarations {
         target.insert(declaration.name.clone(), declaration.value.clone());
     }
+}
+
+fn collect_reference_ids(doc: &Document) -> HashSet<String> {
+    let mut references = HashSet::new();
+    for node in &doc.nodes {
+        let NodeKind::Element(element) = &node.kind else {
+            continue;
+        };
+        for attribute in &element.attributes {
+            collect_references_from_value(attribute.value.as_str(), &mut references);
+        }
+    }
+    references
+}
+
+fn collect_references_from_value(value: &str, references: &mut HashSet<String>) {
+    let bytes = value.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] != b'#' {
+            index += 1;
+            continue;
+        }
+        index += 1;
+        let start = index;
+        while index < bytes.len() {
+            let char = char::from(bytes[index]);
+            if char.is_ascii_alphanumeric() || matches!(char, '_' | '-' | '.' | ':') {
+                index += 1;
+            } else {
+                break;
+            }
+        }
+        if start < index {
+            references.insert(value[start..index].to_string());
+        }
+    }
+}
+
+fn can_remove_non_rendering_node(
+    doc: &Document,
+    node_id: usize,
+    references: &HashSet<String>,
+) -> bool {
+    !node_has_referenced_id(doc, node_id, references)
+}
+
+fn node_has_referenced_id(doc: &Document, node_id: usize, references: &HashSet<String>) -> bool {
+    if node_element(doc, node_id)
+        .and_then(|element| attribute_value(element.attributes.as_slice(), "id"))
+        .is_some_and(|id| references.contains(id))
+    {
+        return true;
+    }
+    doc.children(node_id)
+        .any(|child_id| node_has_referenced_id(doc, child_id, references))
+}
+
+fn has_visible_descendant_attr(doc: &Document, node_id: usize) -> bool {
+    doc.children(node_id).any(|child_id| {
+        if node_element(doc, child_id).is_some_and(|element| {
+            attribute_value(element.attributes.as_slice(), "visibility") == Some("visible")
+        }) {
+            return true;
+        }
+        has_visible_descendant_attr(doc, child_id)
+    })
+}
+
+fn should_remove_path(attributes: &[Attribute], computed_style: &HashMap<String, String>) -> bool {
+    let Some(d) = attribute_value(attributes, "d") else {
+        return true;
+    };
+    if d.trim().is_empty() {
+        return true;
+    }
+    let Ok(path_data) = parse_path_commands(d) else {
+        return false;
+    };
+    if path_data.is_empty() {
+        return true;
+    }
+    path_data.len() == 1
+        && matches!(path_data[0], PathCommand::MoveTo { .. })
+        && !computed_style.contains_key("marker-start")
+        && !computed_style.contains_key("marker-end")
 }
 
 fn is_preserved_group_presentation_attr(name: &str) -> bool {

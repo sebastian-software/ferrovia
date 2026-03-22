@@ -110,6 +110,11 @@ fn matches_svgo_oracle_for_remove_unknowns_and_defaults() {
 }
 
 #[test]
+fn matches_svgo_oracle_for_remove_hidden_elems() {
+    assert_oracle_fixture("remove-hidden-elems");
+}
+
+#[test]
 fn matches_svgo_oracle_for_convert_transform() {
     assert_oracle_fixture("convert-transform");
 }
@@ -389,6 +394,30 @@ fn remove_unknowns_and_defaults_preserves_foreign_object_subtree_and_data_attrs(
 
     let result = optimize(svg, &config).expect("optimize");
     assert_eq!(result.data, svg);
+}
+
+#[test]
+fn remove_hidden_elems_keeps_hidden_group_with_visible_descendant() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><g visibility="hidden"><g visibility="visible"><rect width="10" height="10"/></g></g></svg>"#;
+    let config = Config {
+        plugins: vec![PluginSpec::Name("removeHiddenElems".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(result.data, svg);
+}
+
+#[test]
+fn remove_hidden_elems_removes_unreferenced_marker_and_empty_path() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><marker id="m" display="none"><path d="M0 0"/></marker><path d=""/></svg>"#;
+    let config = Config {
+        plugins: vec![PluginSpec::Name("removeHiddenElems".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(result.data, r#"<svg xmlns="http://www.w3.org/2000/svg"/>"#);
 }
 
 #[test]
