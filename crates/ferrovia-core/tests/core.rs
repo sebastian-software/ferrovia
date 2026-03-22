@@ -109,6 +109,11 @@ fn matches_svgo_oracle_for_convert_transform() {
     assert_oracle_fixture("convert-transform");
 }
 
+#[test]
+fn matches_svgo_oracle_for_convert_path_data() {
+    assert_oracle_fixture("convert-path-data");
+}
+
 fn assert_oracle_fixture(name: &str) {
     let root = workspace_root();
     let svg_path = root.join(format!("tests/fixtures/oracle/{name}.svg"));
@@ -366,5 +371,43 @@ fn convert_transform_removes_identity_and_shortens_rotate_about_center() {
     assert_eq!(
         result.data,
         r#"<svg xmlns="http://www.w3.org/2000/svg"><g transform="rotate(90 10 20)"/></svg>"#
+    );
+}
+
+#[test]
+fn convert_path_data_normalizes_lines_and_collapses_repeated_axis_commands() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0L5 0L8 0L8 4L8 3"/></svg>"#;
+    let config = Config {
+        plugins: vec![PluginSpec::Name("convertPathData".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0h8v4-1"/></svg>"#
+    );
+}
+
+#[test]
+fn convert_path_data_preserves_repeated_commands_when_marker_mid_matches_stylesheet() {
+    let svg = concat!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><style>.mid"#,
+        "{marker-mid:url(#m)}",
+        r#"</style><path class="mid" d="M0 0L5 0L8 0L8 4L8 3"/></svg>"#
+    );
+    let config = Config {
+        plugins: vec![PluginSpec::Name("convertPathData".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        concat!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg"><style>.mid"#,
+            "{marker-mid:url(#m)}",
+            r#"</style><path class="mid" d="M0 0h5h3v4v-1"/></svg>"#
+        )
     );
 }

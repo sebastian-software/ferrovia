@@ -5,9 +5,10 @@ use serde_json::Value;
 use crate::ast::{Attribute, Document, NodeKind, QuoteStyle};
 use crate::config::{Config, PluginSpec};
 use crate::error::{FerroviaError, Result};
-use crate::geometry::{TransformOperation, parse_transform_operations};
+use crate::geometry::{PathCommand, TransformOperation, parse_path_commands, parse_transform_operations};
 use crate::style::{
-    dedupe_declarations, parse_style_declarations, remove_declarations, update_style_attribute,
+    dedupe_declarations, parse_style_declarations, parse_stylesheet_rules, remove_declarations,
+    selector_matches, update_style_attribute,
 };
 
 const PRESET_DEFAULT: &[&str] = &[
@@ -58,6 +59,7 @@ pub fn apply_plugins(doc: &mut Document, config: &Config) -> Result<()> {
             "cleanupEnableBackground" => cleanup_enable_background(doc),
             "removeEmptyText" => remove_empty_text(doc, params.as_ref()),
             "convertTransform" => convert_transform(doc, params.as_ref()),
+            "convertPathData" => convert_path_data(doc, params.as_ref()),
             "moveElemsAttrsToGroup" => move_elems_attrs_to_group(doc),
             "moveGroupAttrsToElems" => move_group_attrs_to_elems(doc),
             "collapseGroups" => collapse_groups(doc),
@@ -1030,6 +1032,10 @@ fn round_number(value: f64, precision: usize) -> f64 {
     (value * factor).round() / factor
 }
 
+fn is_zero(value: f64) -> bool {
+    value.abs() < 1e-12
+}
+
 #[expect(
     clippy::unnecessary_join,
     reason = "The explicit collect+join keeps the port shape close to SVGO serialization"
@@ -1122,6 +1128,424 @@ fn json_usize_opt(params: Option<&Value>, name: &str) -> Option<usize> {
         .and_then(|value| value.get(name))
         .and_then(Value::as_u64)
         .and_then(|value| usize::try_from(value).ok())
+}
+
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "SVGO convertPathData parameters are boolean-heavy by design"
+)]
+#[derive(Debug, Clone, Copy)]
+struct ConvertPathDataParams {
+    float_precision: usize,
+    line_shorthands: bool,
+    remove_useless: bool,
+    collapse_repeated: bool,
+    leading_zero: bool,
+    negative_extra_space: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct PathItem {
+    command: char,
+    args: Vec<f64>,
+}
+
+fn convert_path_data(doc: &mut Document, params: Option<&Value>) {
+    let params = convert_path_data_params(params);
+    let marker_mid_rules = collect_marker_mid_rules(doc);
+
+    for node_id in 1..doc.nodes.len() {
+        let has_marker_mid = path_has_marker_mid(doc, node_id, &marker_mid_rules);
+        let NodeKind::Element(element) = &mut doc.node_mut(node_id).kind else {
+            continue;
+        };
+        if element.name != "path" {
+            continue;
+        }
+        let Some(attribute) = attribute_named_mut(element.attributes.as_mut_slice(), "d") else {
+            continue;
+        };
+
+        let Ok(mut items) = parse_path_items(attribute.value.as_str()) else {
+            continue;
+        };
+        if items.is_empty() {
+            continue;
+        }
+
+        convert_path_to_relative(&mut items);
+        if params.line_shorthands {
+            convert_line_shorthands(&mut items);
+        }
+        if params.remove_useless && !has_marker_mid {
+            remove_useless_path_items(&mut items);
+        }
+        if params.collapse_repeated && !has_marker_mid {
+            collapse_repeated_path_items(&mut items);
+        }
+
+        attribute.value = serialize_path_items(&items, params);
+    }
+}
+
+fn convert_path_data_params(params: Option<&Value>) -> ConvertPathDataParams {
+    ConvertPathDataParams {
+        float_precision: json_usize_opt(params, "floatPrecision").unwrap_or(3),
+        line_shorthands: json_bool(params, "lineShorthands", true),
+        remove_useless: json_bool(params, "removeUseless", true),
+        collapse_repeated: json_bool(params, "collapseRepeated", true),
+        leading_zero: json_bool(params, "leadingZero", true),
+        negative_extra_space: json_bool(params, "negativeExtraSpace", true),
+    }
+}
+
+fn collect_marker_mid_rules(doc: &Document) -> Vec<String> {
+    let mut selectors = Vec::new();
+    for node_id in 1..doc.nodes.len() {
+        let Some(element) = node_element(doc, node_id) else {
+            continue;
+        };
+        if element.name != "style" {
+            continue;
+        }
+        for child_id in doc.children(node_id) {
+            let NodeKind::Text(text) = &doc.node(child_id).kind else {
+                continue;
+            };
+            selectors.extend(
+                parse_stylesheet_rules(text)
+                    .into_iter()
+                    .filter(|rule| rule.declarations.iter().any(|decl| decl.name == "marker-mid"))
+                    .map(|rule| rule.selector),
+            );
+        }
+    }
+    selectors
+}
+
+fn path_has_marker_mid(doc: &Document, node_id: usize, rules: &[String]) -> bool {
+    let Some(element) = node_element(doc, node_id) else {
+        return false;
+    };
+    if element.name != "path" {
+        return false;
+    }
+    attribute_value(element.attributes.as_slice(), "marker-mid").is_some()
+        || attribute_value(element.attributes.as_slice(), "style")
+            .is_some_and(|style| style.contains("marker-mid"))
+        || rules
+            .iter()
+            .any(|selector| selector_matches(doc, node_id, selector))
+}
+
+fn parse_path_items(value: &str) -> std::result::Result<Vec<PathItem>, String> {
+    parse_path_commands(value).map(|commands| commands.into_iter().map(PathItem::from).collect())
+}
+
+impl From<PathCommand> for PathItem {
+    fn from(command: PathCommand) -> Self {
+        match command {
+            PathCommand::MoveTo { abs, x, y } => Self {
+                command: if abs { 'M' } else { 'm' },
+                args: vec![x, y],
+            },
+            PathCommand::LineTo { abs, x, y } => Self {
+                command: if abs { 'L' } else { 'l' },
+                args: vec![x, y],
+            },
+            PathCommand::HorizontalLineTo { abs, x } => Self {
+                command: if abs { 'H' } else { 'h' },
+                args: vec![x],
+            },
+            PathCommand::VerticalLineTo { abs, y } => Self {
+                command: if abs { 'V' } else { 'v' },
+                args: vec![y],
+            },
+            PathCommand::CurveTo {
+                abs,
+                x1,
+                y1,
+                x2,
+                y2,
+                x,
+                y,
+            } => Self {
+                command: if abs { 'C' } else { 'c' },
+                args: vec![x1, y1, x2, y2, x, y],
+            },
+            PathCommand::SmoothCurveTo { abs, x2, y2, x, y } => Self {
+                command: if abs { 'S' } else { 's' },
+                args: vec![x2, y2, x, y],
+            },
+            PathCommand::Quadratic { abs, x1, y1, x, y } => Self {
+                command: if abs { 'Q' } else { 'q' },
+                args: vec![x1, y1, x, y],
+            },
+            PathCommand::SmoothQuadratic { abs, x, y } => Self {
+                command: if abs { 'T' } else { 't' },
+                args: vec![x, y],
+            },
+            PathCommand::EllipticalArc {
+                abs,
+                rx,
+                ry,
+                x_axis_rotation,
+                large_arc,
+                sweep,
+                x,
+                y,
+            } => Self {
+                command: if abs { 'A' } else { 'a' },
+                args: vec![
+                    rx,
+                    ry,
+                    x_axis_rotation,
+                    if large_arc { 1.0 } else { 0.0 },
+                    if sweep { 1.0 } else { 0.0 },
+                    x,
+                    y,
+                ],
+            },
+            PathCommand::ClosePath { abs } => Self {
+                command: if abs { 'Z' } else { 'z' },
+                args: Vec::new(),
+            },
+        }
+    }
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "The relative-path rewrite stays readable as one SVGO-shaped normalization pass"
+)]
+fn convert_path_to_relative(items: &mut [PathItem]) {
+    let mut cursor_x = 0.0;
+    let mut cursor_y = 0.0;
+    let mut start_x = 0.0;
+    let mut start_y = 0.0;
+
+    for (index, item) in items.iter_mut().enumerate() {
+        match item.command {
+            'M' => {
+                let x = item.args[0];
+                let y = item.args[1];
+                if index != 0 {
+                    item.command = 'm';
+                    item.args[0] = x - cursor_x;
+                    item.args[1] = y - cursor_y;
+                }
+                cursor_x = x;
+                cursor_y = y;
+                start_x = x;
+                start_y = y;
+            }
+            'L' => {
+                let x = item.args[0];
+                let y = item.args[1];
+                item.command = 'l';
+                item.args[0] = x - cursor_x;
+                item.args[1] = y - cursor_y;
+                cursor_x = x;
+                cursor_y = y;
+            }
+            'H' => {
+                let x = item.args[0];
+                item.command = 'h';
+                item.args[0] = x - cursor_x;
+                cursor_x = x;
+            }
+            'V' => {
+                let y = item.args[0];
+                item.command = 'v';
+                item.args[0] = y - cursor_y;
+                cursor_y = y;
+            }
+            'C' => {
+                let x = item.args[4];
+                let y = item.args[5];
+                item.command = 'c';
+                item.args[0] -= cursor_x;
+                item.args[1] -= cursor_y;
+                item.args[2] -= cursor_x;
+                item.args[3] -= cursor_y;
+                item.args[4] = x - cursor_x;
+                item.args[5] = y - cursor_y;
+                cursor_x = x;
+                cursor_y = y;
+            }
+            'S' => {
+                let x = item.args[2];
+                let y = item.args[3];
+                item.command = 's';
+                item.args[0] -= cursor_x;
+                item.args[1] -= cursor_y;
+                item.args[2] = x - cursor_x;
+                item.args[3] = y - cursor_y;
+                cursor_x = x;
+                cursor_y = y;
+            }
+            'Q' => {
+                let x = item.args[2];
+                let y = item.args[3];
+                item.command = 'q';
+                item.args[0] -= cursor_x;
+                item.args[1] -= cursor_y;
+                item.args[2] = x - cursor_x;
+                item.args[3] = y - cursor_y;
+                cursor_x = x;
+                cursor_y = y;
+            }
+            'T' => {
+                let x = item.args[0];
+                let y = item.args[1];
+                item.command = 't';
+                item.args[0] = x - cursor_x;
+                item.args[1] = y - cursor_y;
+                cursor_x = x;
+                cursor_y = y;
+            }
+            'A' => {
+                let x = item.args[5];
+                let y = item.args[6];
+                item.command = 'a';
+                item.args[5] = x - cursor_x;
+                item.args[6] = y - cursor_y;
+                cursor_x = x;
+                cursor_y = y;
+            }
+            'm' => {
+                cursor_x += item.args[0];
+                cursor_y += item.args[1];
+                start_x = cursor_x;
+                start_y = cursor_y;
+            }
+            'l' | 't' => {
+                cursor_x += item.args[0];
+                cursor_y += item.args[1];
+            }
+            'h' => cursor_x += item.args[0],
+            'v' => cursor_y += item.args[0],
+            'c' => {
+                cursor_x += item.args[4];
+                cursor_y += item.args[5];
+            }
+            's' | 'q' => {
+                cursor_x += item.args[2];
+                cursor_y += item.args[3];
+            }
+            'a' => {
+                cursor_x += item.args[5];
+                cursor_y += item.args[6];
+            }
+            'Z' | 'z' => {
+                item.command = 'z';
+                cursor_x = start_x;
+                cursor_y = start_y;
+            }
+            _ => {}
+        }
+    }
+}
+
+fn convert_line_shorthands(items: &mut [PathItem]) {
+    for item in items {
+        if item.command == 'l' && is_zero(item.args[0]) {
+            item.command = 'v';
+            item.args = vec![item.args[1]];
+        } else if item.command == 'l' && is_zero(item.args[1]) {
+            item.command = 'h';
+            item.args = vec![item.args[0]];
+        }
+    }
+}
+
+fn remove_useless_path_items(items: &mut Vec<PathItem>) {
+    items.retain(|item| match item.command {
+        'l' => !is_zero(item.args[0]) || !is_zero(item.args[1]),
+        'h' | 'v' => !is_zero(item.args[0]),
+        _ => true,
+    });
+}
+
+fn collapse_repeated_path_items(items: &mut Vec<PathItem>) {
+    let mut collapsed: Vec<PathItem> = Vec::new();
+    for item in items.drain(..) {
+        if let Some(previous) = collapsed.last_mut()
+            && previous.command == item.command
+            && matches!(item.command, 'h' | 'v')
+        {
+            for value in item.args {
+                if let Some(last) = previous.args.last_mut()
+                    && has_same_sign(*last, value)
+                {
+                    *last += value;
+                } else {
+                    previous.args.push(value);
+                }
+            }
+            continue;
+        }
+        collapsed.push(item);
+    }
+    *items = collapsed;
+}
+
+fn serialize_path_items(items: &[PathItem], params: ConvertPathDataParams) -> String {
+    let mut output = String::new();
+    for item in items {
+        output.push(item.command);
+        output.push_str(
+            serialize_path_numbers(
+                &item.args,
+                params.float_precision,
+                params.leading_zero,
+                params.negative_extra_space,
+                matches!(item.command, 'a' | 'A'),
+            )
+            .as_str(),
+        );
+    }
+    output
+}
+
+fn serialize_path_numbers(
+    values: &[f64],
+    precision: usize,
+    leading_zero: bool,
+    negative_extra_space: bool,
+    is_arc: bool,
+) -> String {
+    let mut output = String::new();
+    let mut previous = None;
+    for (index, value) in values.iter().copied().enumerate() {
+        let rounded = round_number(value, precision);
+        let mut delimiter = if index == 0 || (is_arc && (index % 7 == 4 || index % 7 == 5)) {
+            ""
+        } else {
+            " "
+        };
+        let item = if leading_zero {
+            remove_leading_zero(rounded)
+        } else {
+            rounded.to_string()
+        };
+        if negative_extra_space
+            && !delimiter.is_empty()
+            && (rounded < 0.0
+                || (item.starts_with('.')
+                    && previous.is_some_and(|prev: f64| prev.fract() != 0.0)))
+        {
+            delimiter = "";
+        }
+        output.push_str(delimiter);
+        output.push_str(item.as_str());
+        previous = Some(rounded);
+    }
+    output
+}
+
+fn has_same_sign(left: f64, right: f64) -> bool {
+    is_zero(left) || is_zero(right) || left.is_sign_positive() == right.is_sign_positive()
 }
 
 fn remove_non_inheritable_group_attrs(doc: &mut Document) {
