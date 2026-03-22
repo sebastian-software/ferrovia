@@ -24,6 +24,7 @@ const PRESET_DEFAULT: &[&str] = &[
     "removeNonInheritableGroupAttrs",
     "removeUselessStrokeAndFill",
     "cleanupEnableBackground",
+    "removeHiddenElems",
     "removeEmptyText",
     "convertTransform",
     "moveElemsAttrsToGroup",
