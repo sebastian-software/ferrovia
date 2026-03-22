@@ -140,6 +140,11 @@ fn matches_svgo_oracle_for_convert_colors() {
 }
 
 #[test]
+fn matches_svgo_oracle_for_convert_ellipse_to_circle() {
+    assert_oracle_fixture("convert-ellipse-to-circle");
+}
+
+#[test]
 fn matches_svgo_oracle_for_remove_hidden_elems() {
     assert_oracle_fixture("remove-hidden-elems");
 }
@@ -218,6 +223,21 @@ fn convert_colors_skips_current_color_conversion_inside_masks() {
     assert_eq!(
         result.data,
         r##"<svg xmlns="http://www.w3.org/2000/svg"><mask id="m"><rect fill="#00f"/></mask><rect fill="currentColor" stroke="none"/></svg>"##
+    );
+}
+
+#[test]
+fn convert_ellipse_to_circle_rewrites_matching_radii() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><ellipse cx="5" cy="5" rx="10" ry="10"/><ellipse rx="10" ry="12"/></svg>"#;
+    let config = Config {
+        plugins: vec![PluginSpec::Name("convertEllipseToCircle".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><circle cx="5" cy="5" r="10"/><ellipse rx="10" ry="12"/></svg>"#
     );
 }
 

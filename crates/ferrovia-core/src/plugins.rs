@@ -36,6 +36,7 @@ const PRESET_DEFAULT: &[&str] = &[
     "cleanupEnableBackground",
     "removeHiddenElems",
     "removeEmptyText",
+    "convertEllipseToCircle",
     "convertTransform",
     "moveElemsAttrsToGroup",
     "moveGroupAttrsToElems",
@@ -77,6 +78,7 @@ pub fn apply_plugins(doc: &mut Document, config: &Config) -> Result<()> {
             "cleanupEnableBackground" => cleanup_enable_background(doc),
             "removeHiddenElems" => remove_hidden_elems(doc, params.as_ref()),
             "removeEmptyText" => remove_empty_text(doc, params.as_ref()),
+            "convertEllipseToCircle" => convert_ellipse_to_circle(doc),
             "convertTransform" => convert_transform(doc, params.as_ref()),
             "convertPathData" => convert_path_data(doc, params.as_ref()),
             "moveElemsAttrsToGroup" => move_elems_attrs_to_group(doc),
@@ -536,6 +538,48 @@ fn convert_colors_params(params: Option<&Value>) -> ConvertColorsParams {
         convert_case,
         shorthex: json_bool(params, "shorthex", true),
         shortname: json_bool(params, "shortname", true),
+    }
+}
+
+#[expect(
+    clippy::similar_names,
+    reason = "Ellipse conversion is inherently paired around rx/ry semantics"
+)]
+fn convert_ellipse_to_circle(doc: &mut Document) {
+    for node in &mut doc.nodes {
+        let NodeKind::Element(element) = &mut node.kind else {
+            continue;
+        };
+        if element.name != "ellipse" {
+            continue;
+        }
+        let rx_attr = attribute_named(element.attributes.as_slice(), "rx").cloned();
+        let ry_attr = attribute_named(element.attributes.as_slice(), "ry").cloned();
+        let rx_raw = rx_attr
+            .as_ref()
+            .map_or("0", |attribute| attribute.value.as_str());
+        let ry_raw = ry_attr
+            .as_ref()
+            .map_or("0", |attribute| attribute.value.as_str());
+        if rx_raw != ry_raw && rx_raw != "auto" && ry_raw != "auto" {
+            continue;
+        }
+
+        let radius = if rx_raw == "auto" { ry_raw } else { rx_raw };
+        let quote = rx_attr
+            .as_ref()
+            .or(ry_attr.as_ref())
+            .map_or(QuoteStyle::Double, |attribute| attribute.quote);
+
+        element.name = "circle".to_string();
+        element
+            .attributes
+            .retain(|attribute| attribute.name != "rx" && attribute.name != "ry");
+        element.attributes.push(Attribute {
+            name: "r".to_string(),
+            value: radius.to_string(),
+            quote,
+        });
     }
 }
 
