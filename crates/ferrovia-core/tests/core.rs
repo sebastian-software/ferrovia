@@ -110,6 +110,11 @@ fn matches_svgo_oracle_for_remove_unknowns_and_defaults() {
 }
 
 #[test]
+fn matches_svgo_oracle_for_merge_styles() {
+    assert_oracle_fixture("merge-styles");
+}
+
+#[test]
 fn matches_svgo_oracle_for_remove_hidden_elems() {
     assert_oracle_fixture("remove-hidden-elems");
 }
@@ -394,6 +399,55 @@ fn remove_unknowns_and_defaults_preserves_foreign_object_subtree_and_data_attrs(
 
     let result = optimize(svg, &config).expect("optimize");
     assert_eq!(result.data, svg);
+}
+
+#[test]
+fn merge_styles_drops_media_attr_on_single_style_like_svgo() {
+    let svg = concat!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><style media="screen">.a"#,
+        "{fill:red}",
+        r#"</style></svg>"#
+    );
+    let config = Config {
+        plugins: vec![PluginSpec::Name("mergeStyles".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        concat!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg"><style>.a"#,
+            "{fill:red}",
+            r#"</style></svg>"#
+        )
+    );
+}
+
+#[test]
+fn merge_styles_uses_cdata_when_any_merged_style_uses_cdata() {
+    let svg = concat!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><style><![CDATA[.a"#,
+        "{fill:red}",
+        r#"]]></style><style>.b"#,
+        "{fill:blue}",
+        r#"</style></svg>"#
+    );
+    let config = Config {
+        plugins: vec![PluginSpec::Name("mergeStyles".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        concat!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg"><style><![CDATA[.a"#,
+            "{fill:red}.b",
+            "{fill:blue}",
+            r#"]]></style></svg>"#
+        )
+    );
 }
 
 #[test]

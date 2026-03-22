@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <style media="screen">.a{fill:red}</style>
+  <style><![CDATA[.b{fill:blue}]]></style>
+  <style type="text/less">.skip{color:black}</style>
+  <style>   </style>
+  <foreignObject width="10" height="10">
+    <style>.x{fill:black}</style>
+  </foreignObject>
+</svg>

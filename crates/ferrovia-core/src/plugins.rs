@@ -19,6 +19,7 @@ const PRESET_DEFAULT: &[&str] = &[
     "removeMetadata",
     "removeEditorsNSData",
     "cleanupAttrs",
+    "mergeStyles",
     "removeUselessDefs",
     "removeUnknownsAndDefaults",
     "removeNonInheritableGroupAttrs",
@@ -55,6 +56,7 @@ pub fn apply_plugins(doc: &mut Document, config: &Config) -> Result<()> {
             "removeMetadata" => remove_elements(doc, "metadata"),
             "removeEditorsNSData" => remove_editors_ns_data(doc, params.as_ref()),
             "cleanupAttrs" => cleanup_attrs(doc, params.as_ref()),
+            "mergeStyles" => merge_styles(doc),
             "removeUselessDefs" => remove_useless_defs(doc),
             "removeUnknownsAndDefaults" => remove_unknowns_and_defaults(doc, params.as_ref()),
             "removeNonInheritableGroupAttrs" => remove_non_inheritable_group_attrs(doc),
@@ -1851,6 +1853,64 @@ fn remove_hidden_elems_params(params: Option<&Value>) -> RemoveHiddenElemsParams
         path_empty_d: json_bool(params, "pathEmptyD", true),
         polyline_empty_points: json_bool(params, "polylineEmptyPoints", true),
         polygon_empty_points: json_bool(params, "polygonEmptyPoints", true),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StyleContentKind {
+    Text,
+    Cdata,
+}
+
+fn merge_styles(doc: &mut Document) {
+    let mut first_style_id = None;
+    let mut collected_styles = String::new();
+    let mut content_kind = StyleContentKind::Text;
+
+    for node_id in 1..doc.nodes.len() {
+        if is_in_foreign_object_subtree(doc, node_id) {
+            continue;
+        }
+        let Some(element) = node_element(doc, node_id) else {
+            continue;
+        };
+        if element.name != "style" {
+            continue;
+        }
+        if let Some(style_type) = attribute_value(element.attributes.as_slice(), "type")
+            && !style_type.is_empty()
+            && style_type != "text/css"
+        {
+            continue;
+        }
+
+        let (css, saw_cdata) = collect_style_css(doc, node_id);
+        if saw_cdata {
+            content_kind = StyleContentKind::Cdata;
+        }
+        if css.trim().is_empty() {
+            detach_node(doc, node_id);
+            continue;
+        }
+
+        let media = node_element(doc, node_id)
+            .and_then(|element| attribute_value(element.attributes.as_slice(), "media"))
+            .map(str::to_string);
+        if let Some(media) = media {
+            collected_styles.push_str(format!("@media {media}{{{css}}}").as_str());
+            if let NodeKind::Element(element) = &mut doc.node_mut(node_id).kind {
+                element.attributes.retain(|attribute| attribute.name != "media");
+            }
+        } else {
+            collected_styles.push_str(css.as_str());
+        }
+
+        if let Some(first_id) = first_style_id {
+            detach_node(doc, node_id);
+            replace_children_with_style_content(doc, first_id, collected_styles.as_str(), content_kind);
+        } else {
+            first_style_id = Some(node_id);
+        }
     }
 }
 
@@ -3940,6 +4000,45 @@ fn collect_semantic_stylesheet(doc: &Document) -> Vec<StylesheetRule> {
         }
     }
     rules
+}
+
+fn collect_style_css(doc: &Document, node_id: usize) -> (String, bool) {
+    let mut css = String::new();
+    let mut saw_cdata = false;
+    for child_id in doc.children(node_id) {
+        match &doc.node(child_id).kind {
+            NodeKind::Text(text) => css.push_str(text),
+            NodeKind::Cdata(text) => {
+                saw_cdata = true;
+                css.push_str(text);
+            }
+            _ => {}
+        }
+    }
+    (css, saw_cdata)
+}
+
+fn replace_children_with_style_content(
+    doc: &mut Document,
+    node_id: usize,
+    css: &str,
+    content_kind: StyleContentKind,
+) {
+    let child_ids: Vec<_> = doc.children(node_id).collect();
+    for child_id in child_ids {
+        doc.node_mut(child_id).parent = None;
+        doc.node_mut(child_id).next_sibling = None;
+    }
+    doc.node_mut(node_id).first_child = None;
+    doc.node_mut(node_id).last_child = None;
+    match content_kind {
+        StyleContentKind::Text => {
+            doc.append_child(node_id, NodeKind::Text(css.to_string()));
+        }
+        StyleContentKind::Cdata => {
+            doc.append_child(node_id, NodeKind::Cdata(css.to_string()));
+        }
+    }
 }
 
 fn stylesheet_mentions_attr_selector(stylesheet: &[StylesheetRule], name: &str) -> bool {
