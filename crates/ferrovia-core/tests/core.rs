@@ -130,6 +130,11 @@ fn matches_svgo_oracle_for_cleanup_ids() {
 }
 
 #[test]
+fn matches_svgo_oracle_for_cleanup_numeric_values() {
+    assert_oracle_fixture("cleanup-numeric-values");
+}
+
+#[test]
 fn matches_svgo_oracle_for_remove_hidden_elems() {
     assert_oracle_fixture("remove-hidden-elems");
 }
@@ -174,6 +179,21 @@ fn cleanup_ids_rewrites_begin_references() {
     assert_eq!(
         result.data,
         r#"<svg xmlns="http://www.w3.org/2000/svg"><path id="a" d="M0 0"/><animate begin="a.begin"/></svg>"#
+    );
+}
+
+#[test]
+fn cleanup_numeric_values_rounds_and_strips_default_px() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10.1234 20.9876"><rect x="10.5000px" y="2.54cm" width="0.5000" version="1.1"/></svg>"#;
+    let config = Config {
+        plugins: vec![PluginSpec::Name("cleanupNumericValues".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10.123 20.988"><rect x="10.5" y="96" width=".5" version="1.1"/></svg>"#
     );
 }
 

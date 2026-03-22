@@ -26,6 +26,7 @@ const PRESET_DEFAULT: &[&str] = &[
     "minifyStyles",
     "cleanupIds",
     "removeUselessDefs",
+    "cleanupNumericValues",
     "removeUnknownsAndDefaults",
     "removeNonInheritableGroupAttrs",
     "removeUselessStrokeAndFill",
@@ -65,6 +66,7 @@ pub fn apply_plugins(doc: &mut Document, config: &Config) -> Result<()> {
             "inlineStyles" => inline_styles(doc, params.as_ref()),
             "minifyStyles" => minify_styles(doc, params.as_ref()),
             "removeUselessDefs" => remove_useless_defs(doc),
+            "cleanupNumericValues" => cleanup_numeric_values(doc, params.as_ref()),
             "removeUnknownsAndDefaults" => remove_unknowns_and_defaults(doc, params.as_ref()),
             "removeNonInheritableGroupAttrs" => remove_non_inheritable_group_attrs(doc),
             "removeUselessStrokeAndFill" => remove_useless_stroke_and_fill(doc, params.as_ref()),
@@ -330,6 +332,141 @@ fn cleanup_enable_background_value(
         };
     }
     Some(value.to_string())
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CleanupNumericValuesParams {
+    float_precision: usize,
+    leading_zero: bool,
+    default_px: bool,
+    convert_to_px: bool,
+}
+
+fn cleanup_numeric_values(doc: &mut Document, params: Option<&Value>) {
+    let params = cleanup_numeric_values_params(params);
+    for node in &mut doc.nodes {
+        let NodeKind::Element(element) = &mut node.kind else {
+            continue;
+        };
+
+        if let Some(viewbox) = attribute_named_mut(element.attributes.as_mut_slice(), "viewBox") {
+            let cleaned = split_viewbox_values(viewbox.value.as_str())
+                .into_iter()
+                .map(|value| {
+                    value.parse::<f64>().map_or(value, |number| {
+                        round_number(number, params.float_precision).to_string()
+                    })
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
+            viewbox.value = cleaned;
+        }
+
+        for attribute in &mut element.attributes {
+            if attribute.name == "version" {
+                continue;
+            }
+            let Some((number, unit)) = parse_numeric_value(attribute.value.as_str()) else {
+                continue;
+            };
+
+            let mut value = round_number(number, params.float_precision);
+            let mut unit = unit.to_string();
+            if params.convert_to_px
+                && let Some(px_factor) = absolute_length_factor(unit.as_str())
+            {
+                let px_value = round_number(number * px_factor, params.float_precision);
+                let candidate = format!("{px_value}px");
+                if candidate.len() < attribute.value.len() {
+                    value = px_value;
+                    unit = "px".to_string();
+                }
+            }
+
+            let mut serialized = if params.leading_zero {
+                remove_leading_zero(value)
+            } else {
+                value.to_string()
+            };
+            if params.default_px && unit == "px" {
+                unit.clear();
+            }
+            serialized.push_str(unit.as_str());
+            attribute.value = serialized;
+        }
+    }
+}
+
+fn cleanup_numeric_values_params(params: Option<&Value>) -> CleanupNumericValuesParams {
+    CleanupNumericValuesParams {
+        float_precision: json_usize(params, "floatPrecision", 3),
+        leading_zero: json_bool(params, "leadingZero", true),
+        default_px: json_bool(params, "defaultPx", true),
+        convert_to_px: json_bool(params, "convertToPx", true),
+    }
+}
+
+fn split_viewbox_values(value: &str) -> Vec<String> {
+    value
+        .split(|char: char| char.is_ascii_whitespace() || char == ',')
+        .filter(|item| !item.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+fn parse_numeric_value(value: &str) -> Option<(f64, &str)> {
+    let bytes = value.as_bytes();
+    let mut index = 0;
+    if matches!(bytes.first(), Some(b'+' | b'-')) {
+        index += 1;
+    }
+    let mut saw_digit = false;
+    while index < bytes.len() && char::from(bytes[index]).is_ascii_digit() {
+        index += 1;
+        saw_digit = true;
+    }
+    if bytes.get(index) == Some(&b'.') {
+        index += 1;
+        while index < bytes.len() && char::from(bytes[index]).is_ascii_digit() {
+            index += 1;
+            saw_digit = true;
+        }
+    }
+    if !saw_digit {
+        return None;
+    }
+    if matches!(bytes.get(index), Some(b'e' | b'E')) {
+        let exponent_start = index;
+        index += 1;
+        if matches!(bytes.get(index), Some(b'+' | b'-')) {
+            index += 1;
+        }
+        let exponent_digits_start = index;
+        while index < bytes.len() && char::from(bytes[index]).is_ascii_digit() {
+            index += 1;
+        }
+        if exponent_digits_start == index {
+            index = exponent_start;
+        }
+    }
+    let number = value[..index].parse::<f64>().ok()?;
+    let unit = &value[index..];
+    if !matches!(unit, "" | "%" | "px" | "pt" | "pc" | "mm" | "cm" | "m" | "in" | "ft" | "em" | "ex") {
+        return None;
+    }
+    Some((number, unit))
+}
+
+fn absolute_length_factor(unit: &str) -> Option<f64> {
+    match unit {
+        "cm" => Some(96.0 / 2.54),
+        "mm" => Some(96.0 / 25.4),
+        "in" => Some(96.0),
+        "pt" => Some(4.0 / 3.0),
+        "pc" => Some(16.0),
+        "px" => Some(1.0),
+        _ => None,
+    }
 }
 
 #[expect(
