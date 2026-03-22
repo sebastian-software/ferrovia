@@ -421,6 +421,53 @@ fn remove_hidden_elems_removes_unreferenced_marker_and_empty_path() {
 }
 
 #[test]
+fn remove_hidden_elems_removes_hidden_defs_target_and_corresponding_use() {
+    let svg = r##"<svg xmlns="http://www.w3.org/2000/svg"><defs><g id="gone" display="none"><path d="M0 0"/></g></defs><use href="#gone"/></svg>"##;
+    let config = Config {
+        plugins: vec![PluginSpec::Name("removeHiddenElems".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(result.data, r#"<svg xmlns="http://www.w3.org/2000/svg"/>"#);
+}
+
+#[test]
+fn remove_hidden_elems_keeps_referenced_opacity_zero_path() {
+    let svg = r##"<svg xmlns="http://www.w3.org/2000/svg"><defs><path id="p" opacity="0" d="M0 0"/></defs><use href="#p"/></svg>"##;
+    let config = Config {
+        plugins: vec![PluginSpec::Name("removeHiddenElems".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(result.data, svg);
+}
+
+#[test]
+fn remove_hidden_elems_deoptimizes_non_rendering_removal_when_style_exists() {
+    let svg = concat!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><style>.x"#,
+        "{fill:red}",
+        r#"</style><marker id="m"><path d="M0 0"/></marker></svg>"#
+    );
+    let config = Config {
+        plugins: vec![PluginSpec::Name("removeHiddenElems".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        concat!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg"><style>.x"#,
+            "{fill:red}",
+            r#"</style><marker id="m"/></svg>"#
+        )
+    );
+}
+
+#[test]
 fn convert_transform_removes_identity_and_shortens_rotate_about_center() {
     let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><g transform="translate(10 20) rotate(90) translate(-10 -20) scale(1 1) skewY(0)"/></svg>"#;
     let config = Config {

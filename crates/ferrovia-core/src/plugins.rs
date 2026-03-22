@@ -1688,6 +1688,7 @@ fn remove_unknowns_and_defaults_params(params: Option<&Value>) -> RemoveUnknowns
 struct RemoveHiddenElemsParams {
     is_hidden: bool,
     display_none: bool,
+    opacity0: bool,
     circle_r0: bool,
     ellipse_rx0: bool,
     ellipse_ry0: bool,
@@ -1702,23 +1703,32 @@ struct RemoveHiddenElemsParams {
     polygon_empty_points: bool,
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "The hidden-element pass stays readable as one SVGO-shaped orchestration pass"
+)]
 fn remove_hidden_elems(doc: &mut Document, params: Option<&Value>) {
     let params = remove_hidden_elems_params(params);
     let stylesheet = collect_semantic_stylesheet(doc);
     let mut computed_styles = HashMap::<usize, HashMap<String, String>>::new();
     let reference_ids = collect_reference_ids(doc);
-    let deoptimized_non_rendering = document_has_style_or_scripts(doc);
+    let deoptimized_non_rendering = hidden_elems_deoptimized(doc);
+    let use_references = collect_use_references(doc);
+    let mut removed_def_ids = HashSet::<String>::new();
+    let mut defs_nodes = Vec::<usize>::new();
+    let mut delayed_non_rendering = Vec::<usize>::new();
 
     for node_id in 1..doc.nodes.len() {
         let Some(element_name) = node_element_name(doc, node_id).map(str::to_string) else {
             continue;
         };
 
-        if !deoptimized_non_rendering
-            && is_non_rendering(element_name.as_str())
-            && can_remove_non_rendering_node(doc, node_id, &reference_ids)
-        {
-            detach_node(doc, node_id);
+        if element_name == "defs" {
+            defs_nodes.push(node_id);
+        }
+
+        if is_non_rendering(element_name.as_str()) {
+            delayed_non_rendering.push(node_id);
             continue;
         }
 
@@ -1726,6 +1736,18 @@ fn remove_hidden_elems(doc: &mut Document, params: Option<&Value>) {
         let Some(element) = node_element(doc, node_id) else {
             continue;
         };
+
+        if params.opacity0
+            && computed_style.get("opacity").is_some_and(|value| value == "0")
+        {
+            if element_name == "path" {
+                delayed_non_rendering.push(node_id);
+                continue;
+            }
+            record_removed_def_id(doc, node_id, &mut removed_def_ids);
+            detach_node(doc, node_id);
+            continue;
+        }
 
         let should_remove = match element_name.as_str() {
             "circle" if params.circle_r0 && doc.children(node_id).next().is_none() => {
@@ -1777,7 +1799,36 @@ fn remove_hidden_elems(doc: &mut Document, params: Option<&Value>) {
                     .is_some_and(|value| value == "none"));
 
         if should_remove {
+            record_removed_def_id(doc, node_id, &mut removed_def_ids);
             detach_node(doc, node_id);
+        }
+    }
+
+    if !deoptimized_non_rendering {
+        for node_id in delayed_non_rendering {
+            if doc.node(node_id).parent.is_none() {
+                continue;
+            }
+            if can_remove_non_rendering_node(doc, node_id, &reference_ids) {
+                record_removed_def_id(doc, node_id, &mut removed_def_ids);
+                detach_node(doc, node_id);
+            }
+        }
+    }
+
+    for id in removed_def_ids {
+        if let Some(use_nodes) = use_references.get(id.as_str()) {
+            for &use_id in use_nodes {
+                if doc.node(use_id).parent.is_some() {
+                    detach_node(doc, use_id);
+                }
+            }
+        }
+    }
+
+    for defs_id in defs_nodes {
+        if doc.node(defs_id).parent.is_some() && doc.children(defs_id).next().is_none() {
+            detach_node(doc, defs_id);
         }
     }
 }
@@ -1786,6 +1837,7 @@ fn remove_hidden_elems_params(params: Option<&Value>) -> RemoveHiddenElemsParams
     RemoveHiddenElemsParams {
         is_hidden: json_bool(params, "isHidden", true),
         display_none: json_bool(params, "displayNone", true),
+        opacity0: json_bool(params, "opacity0", true),
         circle_r0: json_bool(params, "circleR0", true),
         ellipse_rx0: json_bool(params, "ellipseRX0", true),
         ellipse_ry0: json_bool(params, "ellipseRY0", true),
@@ -3971,6 +4023,27 @@ fn collect_reference_ids(doc: &Document) -> HashSet<String> {
     references
 }
 
+fn collect_use_references(doc: &Document) -> HashMap<String, Vec<usize>> {
+    let mut references = HashMap::<String, Vec<usize>>::new();
+    for (node_id, node) in doc.nodes.iter().enumerate().skip(1) {
+        let NodeKind::Element(element) = &node.kind else {
+            continue;
+        };
+        if element.name != "use" {
+            continue;
+        }
+        for attribute in &element.attributes {
+            if attribute.name != "href" && !attribute.name.ends_with(":href") {
+                continue;
+            }
+            if let Some(id) = attribute.value.strip_prefix('#') {
+                references.entry(id.to_string()).or_default().push(node_id);
+            }
+        }
+    }
+    references
+}
+
 fn collect_references_from_value(value: &str, references: &mut HashSet<String>) {
     let bytes = value.as_bytes();
     let mut index = 0;
@@ -4001,6 +4074,20 @@ fn can_remove_non_rendering_node(
     references: &HashSet<String>,
 ) -> bool {
     !node_has_referenced_id(doc, node_id, references)
+}
+
+fn record_removed_def_id(doc: &Document, node_id: usize, removed_def_ids: &mut HashSet<String>) {
+    let Some(parent_id) = doc.node(node_id).parent else {
+        return;
+    };
+    if node_element_name(doc, parent_id) != Some("defs") {
+        return;
+    }
+    if let Some(id) = node_element(doc, node_id)
+        .and_then(|element| attribute_value(element.attributes.as_slice(), "id"))
+    {
+        removed_def_ids.insert(id.to_string());
+    }
 }
 
 fn node_has_referenced_id(doc: &Document, node_id: usize, references: &HashSet<String>) -> bool {
@@ -4042,6 +4129,16 @@ fn should_remove_path(attributes: &[Attribute], computed_style: &HashMap<String,
         && matches!(path_data[0], PathCommand::MoveTo { .. })
         && !computed_style.contains_key("marker-start")
         && !computed_style.contains_key("marker-end")
+}
+
+fn hidden_elems_deoptimized(doc: &Document) -> bool {
+    doc.nodes.iter().enumerate().skip(1).any(|(node_id, node)| {
+        let NodeKind::Element(element) = &node.kind else {
+            return false;
+        };
+        (element.name == "style" && doc.children(node_id).next().is_some())
+            || element_has_scripts(doc, node_id)
+    })
 }
 
 fn is_preserved_group_presentation_attr(name: &str) -> bool {
