@@ -14,6 +14,8 @@
   "scripts": {
     "oracle": "node ./scripts/run-svgo-oracle.mjs",
     "test:oracle": "node ./scripts/run-svgo-oracle.mjs ./tests/fixtures/oracle/remove-comments.svg ./tests/fixtures/oracle/remove-comments.config.json",
+    "test:preset-default": "cargo test -p ferrovia-core --test preset_default",
+    "test:svgo-test-suite": "bash ./scripts/check-svgo-test-suite.sh",
     "build:napi": "pnpm exec napi build --manifest-path crates/ferrovia-napi/Cargo.toml --package-json-path packages/node/package.json --output-dir packages/node --platform --release --no-js",
     "test:node": "node ./tests/node-smoke.mjs && node ./tests/node-load-config.mjs"
   },

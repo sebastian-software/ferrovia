@@ -17,40 +17,27 @@ fn workspace_root() -> PathBuf {
 
 #[test]
 fn upstream_plugin_fixture_matrix_matches_svgo() {
-    let fixtures = [
-        ("cleanupAttrs", "cleanupAttrs.01.svg.txt"),
-        ("cleanupAttrs", "cleanupAttrs.02.svg.txt"),
-        ("removeDesc", "removeDesc.01.svg.txt"),
-        ("removeEditorsNSData", "removeEditorsNSData.01.svg.txt"),
-        ("removeEditorsNSData", "removeEditorsNSData.02.svg.txt"),
-        ("removeEmptyAttrs", "removeEmptyAttrs.01.svg.txt"),
-        ("removeEmptyAttrs", "removeEmptyAttrs.02.svg.txt"),
-        ("removeEmptyText", "removeEmptyText.01.svg.txt"),
-        ("removeEmptyText", "removeEmptyText.02.svg.txt"),
-        ("removeEmptyText", "removeEmptyText.03.svg.txt"),
-        ("removeUselessDefs", "removeUselessDefs.01.svg.txt"),
-        ("removeUselessDefs", "removeUselessDefs.02.svg.txt"),
-        ("removeUselessDefs", "removeUselessDefs.03.svg.txt"),
-        ("removeUselessDefs", "removeUselessDefs.04.svg.txt"),
-        ("removeUselessDefs", "removeUselessDefs.05.svg.txt"),
-        ("removeUnusedNS", "removeUnusedNS.01.svg.txt"),
-        ("removeUnusedNS", "removeUnusedNS.02.svg.txt"),
-        ("removeUnusedNS", "removeUnusedNS.03.svg.txt"),
-        ("removeUnusedNS", "removeUnusedNS.04.svg.txt"),
-        ("removeUnusedNS", "removeUnusedNS.05.svg.txt"),
-        ("removeUnusedNS", "removeUnusedNS.06.svg.txt"),
-        ("removeUnusedNS", "removeUnusedNS.07.svg.txt"),
-        ("sortAttrs", "sortAttrs.01.svg.txt"),
-        ("sortAttrs", "sortAttrs.02.svg.txt"),
-        ("sortAttrs", "sortAttrs.03.svg.txt"),
-        ("sortAttrs", "sortAttrs.04.svg.txt"),
-        ("sortDefsChildren", "sortDefsChildren.01.svg.txt"),
-        ("removeTitle", "removeTitle.01.svg.txt"),
-    ];
-
-    for (plugin, file_name) in fixtures {
-        assert_plugin_fixture(plugin, file_name);
+    for (plugin, file_name) in discover_plugin_fixtures() {
+        assert_plugin_fixture(plugin.as_str(), file_name.as_str());
     }
+}
+
+fn discover_plugin_fixtures() -> Vec<(String, String)> {
+    let fixture_dir = workspace_root().join("tests/upstream/svgo-v4.0.1/plugins");
+    let mut fixtures = fs::read_dir(&fixture_dir)
+        .expect("plugin fixture dir")
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let file_name = entry.file_name().into_string().ok()?;
+            if !file_name.ends_with(".svg.txt") {
+                return None;
+            }
+            let plugin = file_name.split('.').next()?.to_string();
+            Some((plugin, file_name))
+        })
+        .collect::<Vec<_>>();
+    fixtures.sort();
+    fixtures
 }
 
 fn assert_plugin_fixture(plugin: &str, file_name: &str) {
