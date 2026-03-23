@@ -3870,6 +3870,7 @@ fn remove_unknowns_and_defaults(doc: &mut Document, params: Option<&Value>) {
         }
 
         let has_id = node_has_id(doc, node_id);
+        let subtree_has_stop_descendant = subtree_contains_element(doc, node_id, "stop");
         let computed_parent_style = if matches!(doc.node(parent_id).kind, NodeKind::Element(_)) {
             compute_static_style(doc, parent_id, &stylesheet, &mut computed_styles)
         } else {
@@ -3903,6 +3904,13 @@ fn remove_unknowns_and_defaults(doc: &mut Document, params: Option<&Value>) {
                 return true;
             }
 
+            if matches!(attribute.name.as_str(), "stop-color" | "stop-opacity")
+                && element.name != "stop"
+                && !subtree_has_stop_descendant
+            {
+                return false;
+            }
+
             if params.unknown_attrs
                 && !attribute_allowed_on_element(element.name.as_str(), attribute.name.as_str())
             {
@@ -3932,6 +3940,19 @@ fn remove_unknowns_and_defaults(doc: &mut Document, params: Option<&Value>) {
             true
         });
     }
+}
+
+fn subtree_contains_element(doc: &Document, node_id: usize, element_name: &str) -> bool {
+    let mut cursor = doc.node(node_id).first_child;
+    while let Some(child_id) = cursor {
+        if node_element_name(doc, child_id) == Some(element_name)
+            || subtree_contains_element(doc, child_id, element_name)
+        {
+            return true;
+        }
+        cursor = doc.node(child_id).next_sibling;
+    }
+    false
 }
 
 fn remove_unknowns_and_defaults_params(params: Option<&Value>) -> RemoveUnknownsAndDefaultsParams {

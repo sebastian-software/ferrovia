@@ -268,6 +268,29 @@ fn remove_unknowns_and_defaults_drops_inherited_stop_presentation_values() {
 }
 
 #[test]
+fn remove_unknowns_and_defaults_drops_orphan_stop_presentation_on_non_stop_subtree() {
+    let svg = concat!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg">"#,
+        r##"<g stop-color="#00f"><animateColor attributeName="stop-color" from="blue" to="red"/>"##,
+        r#"<path d="M0 0h10v10H0z"/></g></svg>"#,
+    );
+    let config = Config {
+        plugins: vec![PluginSpec::Name("removeUnknownsAndDefaults".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        concat!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg"><g>"#,
+            r#"<animateColor attributeName="stop-color" from="blue" to="red"/>"#,
+            r#"<path d="M0 0h10v10H0z"/></g></svg>"#
+        )
+    );
+}
+
+#[test]
 fn remove_unknowns_and_defaults_strips_unknown_set_event_attrs() {
     let svg = concat!(
         r#"<svg xmlns="http://www.w3.org/2000/svg">"#,

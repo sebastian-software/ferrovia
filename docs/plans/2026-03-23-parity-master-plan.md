@@ -201,6 +201,17 @@ Status: Active
     - zero-length and subpath-canonicalization drift in animated shape fixtures such as `animate-elem-32-t.svg`
     - conservative path merging / grouping in files such as `animate-elem-34-t.svg`, `animate-elem-44-t.svg`, and `coords-trans-01-b.svg`
     - a small residual gradient/default-style case and a few geometry normalization outliers
+- Current state after dropping orphan `stop-*` presentation attrs on non-stop subtrees:
+  - `smoke-20`: `0 / 20` mismatches
+  - `sample-100`: `19 / 100` mismatches
+  - closed causes in this slice:
+    - `removeUnknownsAndDefaults` now drops `stop-color` / `stop-opacity` on non-`stop` subtrees that do not contain any descendant `<stop>` element, matching SVGO on animated gradient harness wrappers
+  - representative wins:
+    - `animate-pservers-grad-01-b.svg`
+  - the remaining wall is now dominated by:
+    - numeric path-coordinate tie-breaks in transformed or rotated helper shapes
+    - zero-length and subpath-canonicalization drift in animated path/line fixtures
+    - conservative path merging / grouping in multi-path scaffold documents
 
 ## Active Cluster Backlog
 1. `smil-reference-preservation`
@@ -252,11 +263,11 @@ Status: Active
   - Expected owner: `removeUnknownsAndDefaults`
   - Status: functionally closed as a subtree-retention bug; the remaining classifier hit is now just a path-numeric delta in the same file
 6. `animated-gradient-defaults`
-   - Symptom: Ferrovia still drops animated inherited/default presentation values on gradient wrapper groups that SVGO keeps.
-   - Representative file:
+  - Symptom: Ferrovia still drops animated inherited/default presentation values on gradient wrapper groups that SVGO keeps.
+  - Representative file:
      - `animate-pservers-grad-01-b.svg`
-   - Expected owner: `removeUnknownsAndDefaults` and inherited-style cleanup around animated `stop-color`
-   - Status: One known `sample-100` occurrence
+  - Expected owner: `removeUnknownsAndDefaults` and inherited-style cleanup around animated `stop-color`
+  - Status: Closed in `sample-100`
 7. `serializer-quote-normalization`
    - Symptom: One remaining file still differs only by quote/attribute normalization.
    - Representative file:
