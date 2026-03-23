@@ -67,6 +67,19 @@ Status: Active
   - the dominant remainder is now a broad `unclassified` W3C animation block, but the first inspected files split into two clearer subthemes:
     - `convertPathData` command-form parity, for example `animate-elem-04-t.svg` where SVGO prefers `m90 258 300-78` and collapsed implicit `M/L` syntax more aggressively than Ferrovia
     - conservative retention of test scaffolding and root metadata, for example `animate-elem-90-b.svg` where Ferrovia still keeps root `id`/`width`/`height`, `<defs><style>`, and other W3C harness structure that SVGO removes
+- Current state after corpus-driven style/deopt cleanup, selective anchor-whitespace preservation, and deterministic `cleanupIds` ordering:
+  - `smoke-20`: `9 / 20` mismatches
+  - `sample-100`: `65 / 100` mismatches
+  - `foreign-descriptive-subtree-retained`: still `1` in `sample-100`
+  - `serializer-quote-normalization`: still `1` in `sample-100`
+  - `transform-folding-and-shape-normalization`: still `3` in `sample-100`
+  - the latest closed causes in this block were:
+    - detached `<style>` nodes no longer deoptimize cleanup/minification passes after they have been removed from the live tree
+    - anchor-local whitespace text survives cleanup without globally reintroducing whitespace-only text nodes into tree-rewrite plugins
+    - `cleanupIds` now minifies in encounter order, matching SVGO on animation reference cases such as `animate-elem-20-t.svg`
+  - the dominant remainder is now even more clearly a `convertPathData` and animation-structure block:
+    - path command canonicalization and implicit-command parity in `animate-elem-04/05/06/07/08-t.svg`
+    - structural attribute / group normalization around translated animation scaffolds in `animate-elem-09/10/11/12-t.svg`
 
 ## Active Cluster Backlog
 1. `foreign-descriptive-subtree-retained`
@@ -84,9 +97,10 @@ Status: Active
 4. `unclassified`
    - Symptom: Remaining corpus mismatches that are no longer explained by the first closed W3C-description cluster or the current quote/transform heuristics.
    - Expected owner: next triage pass
-   - Status: Dominant remainder; first manual inspection shows this is no longer one bucket but at least:
+   - Status: Dominant remainder; current inspection shows this is no longer one bucket but at least:
      - path command canonicalization and shorthand/implicit-command parity in `convertPathData`
-     - conservative retention of W3C harness structure such as root `id`/`width`/`height`, `<defs><style>`, and descriptive wrappers
+     - structural normalization of translated W3C animation scaffolds, especially `x="0"` cleanup and group/transform placement in `animate-elem-09/10/11/12-t.svg`
+     - remaining W3C harness retention outside the already-closed style/deopt cases
 5. `namespace-and-reference-cleanup`
    - Symptom: Namespace removal and reference tracking still need broader corpus validation beyond the already fixed detached-subtree case.
    - Expected owner: `removeUnusedNS` and shared reference helpers
@@ -99,7 +113,8 @@ Status: Active
 - Remeasure `smoke-20` and `sample-100`, then update this file with the next dominant cluster.
 - Result: complete. The next explicit low-risk target was `serializer-quote-normalization`, and the next concrete follow-up after the transform work is to split `unclassified` into:
   - `path-command-canonicalization`
-  - `w3c-harness-structure-retained`
+  - `translated-animation-scaffold-normalization`
+  - `remaining-w3c-harness-structure-retained`
 
 ## Commands
 - Corpus gate:
