@@ -6768,12 +6768,21 @@ fn rewrite_reference_value(value: &str, attribute_name: &str, old_id: &str, new_
 fn rewrite_begin_reference_value(value: &str, old_id: &str, new_id: &str) -> String {
     let mut rewritten = String::with_capacity(value.len());
     let mut rest = value;
+    let mut replaced = false;
     loop {
         let (segment, tail) = match rest.split_once(';') {
             Some((segment, tail)) => (segment, Some(tail)),
             None => (rest, None),
         };
-        rewritten.push_str(rewrite_begin_reference_segment(segment, old_id, new_id).as_str());
+        if replaced {
+            rewritten.push_str(segment);
+        } else {
+            let rewritten_segment = rewrite_begin_reference_segment(segment, old_id, new_id);
+            if rewritten_segment != segment {
+                replaced = true;
+            }
+            rewritten.push_str(rewritten_segment.as_str());
+        }
         let Some(tail) = tail else {
             break;
         };

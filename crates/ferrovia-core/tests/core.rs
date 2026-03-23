@@ -349,6 +349,29 @@ fn cleanup_ids_preserves_begin_list_spacing_when_rewriting_ids() {
 }
 
 #[test]
+fn cleanup_ids_only_rewrites_first_matching_begin_segment_per_id() {
+    let svg = concat!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg">"#,
+        r#"<set id="syncBase" attributeName="display" begin="0s" dur="indefinite" to="inline"/>"#,
+        r#"<animate begin="syncBase.begin + 1s; syncBase.begin + 4s"/></svg>"#,
+    );
+    let config = Config {
+        plugins: vec![PluginSpec::Name("cleanupIds".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        concat!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg">"#,
+            r#"<set id="a" attributeName="display" begin="0s" dur="indefinite" to="inline"/>"#,
+            r#"<animate begin="a.begin + 1s; syncBase.begin + 4s"/></svg>"#,
+        )
+    );
+}
+
+#[test]
 fn cleanup_ids_minifies_in_reference_encounter_order() {
     let svg = concat!(
         r#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">"#,
