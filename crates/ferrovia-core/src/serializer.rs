@@ -1,4 +1,4 @@
-use crate::ast::{Attribute, Document, NodeId, NodeKind, QuoteStyle};
+use crate::ast::{Attribute, Document, NodeId, NodeKind};
 use crate::config::Js2Svg;
 
 #[must_use]
@@ -109,18 +109,9 @@ fn serialize_attribute(attribute: &Attribute, out: &mut String) {
     out.push(' ');
     out.push_str(&attribute.name);
     out.push('=');
-    match attribute.quote {
-        QuoteStyle::Double => {
-            out.push('"');
-            out.push_str(&attribute.value);
-            out.push('"');
-        }
-        QuoteStyle::Single => {
-            out.push('\'');
-            out.push_str(&attribute.value);
-            out.push('\'');
-        }
-    }
+    out.push('"');
+    out.push_str(&attribute.value.replace('"', "&quot;"));
+    out.push('"');
 }
 
 fn indent(out: &mut String, options: &Js2Svg, depth: usize) {
