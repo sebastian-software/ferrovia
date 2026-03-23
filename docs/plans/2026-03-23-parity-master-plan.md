@@ -97,18 +97,34 @@ Status: Active
     - `convertPathData` and path canonicalization drift
     - transform bake-in and geometry rewrite drift
     - residual default-/inherit-materialization cases such as `stop-color="inherit"`
+- Current state after the first SMIL/default normalization wave:
+  - `smoke-20`: `0 / 20` mismatches
+  - `sample-100`: `35 / 100` mismatches
+  - the major closed causes in this wave were:
+    - `removeUnknownsAndDefaults` now treats `use[x|y=0]` and `image[x|y=0]` as removable defaults, matching SVGO on the W3C animation harness files
+    - `stop-color` and `stop-opacity` now participate in inherited-style cleanup, so inherited `stop-*="inherit"` overrides no longer survive unnecessarily on child `<stop>` nodes
+    - `set` and the other SVG animation elements now have a minimal attribute model, which strips unsupported event attrs such as `onend` from `<set>` without destabilizing valid timing/target attrs
+  - the cluster shape has shifted again:
+    - the old broad `smil-and-default-normalization` block is materially smaller
+    - the highest-value remainder inside that area is now narrower and more concrete: `cleanupIds` still over-rewrites some SMIL syncbase / repeat / event-base references in `begin=` lists
+    - representative file: `animate-elem-61-t.svg`, where SVGO preserves names like `syncBase.begin`, `repeatBase.repeat(4)`, and `setFourTarget.click+4s`, while Ferrovia still rewrites them to minified local ids
+  - the remaining wall is now dominated even more clearly by:
+    - SMIL reference preservation in `begin=` and related timing expressions
+    - mixed-content / text / script serialization
+    - `convertPathData` and path canonicalization drift
+    - transform bake-in and geometry rewrite drift
 
 ## Active Cluster Backlog
-1. `smil-and-default-normalization`
-   - Symptom: Ferrovia rewrites SMIL references or materializes implicit defaults where SVGO stays source-faithful.
+1. `smil-reference-preservation`
+   - Symptom: Ferrovia still rewrites some SMIL syncbase, repeat, and event-base references inside `begin=` expressions more aggressively than SVGO.
    - Typical diffs:
-     - `begin="0s; b.end + 1s"` vs. over-canonicalized begin lists
-     - implicit `x="0"` / `y="0"` or similar defaults becoming explicit
-     - explicit `x="0"` on `<use>` and similar zero-default attributes that SVGO leaves implicit
+     - `syncBase.begin + 4s` rewritten to `b.begin + 4s`
+     - `repeatBase.repeat(4)` rewritten to `c.repeat(4)`
+     - `setFourTarget.click+4s` rewritten to `d.click+4s`
    - Representative files:
-     - `animate-elem-61/65/68/70-t.svg`
+     - `animate-elem-61-t.svg`
      - `animate-elem-77/78-t.svg`
-   - Expected owner: shared SMIL/reference/default handling around `cleanupIds` and `removeUnknownsAndDefaults`
+   - Expected owner: `cleanupIds` begin-expression analysis and selective reference rewriting
    - Status: Highest ROI remaining block
 2. `mixed-content-serialization`
    - Symptom: Ferrovia still serializes some `text`/`script`/mixed-content blocks differently from SVGO.
@@ -163,15 +179,15 @@ Status: Active
   - `remaining-w3c-harness-structure-retained`
 
 ## Next Execution Block
-- Close `smil-and-default-normalization` first.
+- Close `smil-reference-preservation` first.
 - Keep scope tight:
-  - do not materialize zero-defaults just because the internal model knows them
+  - only rewrite `begin=` references when the identifier is a real renamable ID target in the same reference graph
   - preserve SVGO spacing and token boundaries in rewritten `begin=` lists
-  - avoid writing inherited default presentation values such as `stop-color="inherit"` unless SVGO also emits them
+  - do not let `cleanupIds` treat arbitrary SMIL timing identifiers as safe rename candidates
 - Remeasure:
   - `smoke-20`
   - `sample-100`
-- Only after that continue with the broader `path-canonicalization` and `mixed-content-serialization` blocks.
+- Only after that continue with the broader `mixed-content-serialization` and `path-canonicalization` blocks.
 
 ## Commands
 - Corpus gate:
