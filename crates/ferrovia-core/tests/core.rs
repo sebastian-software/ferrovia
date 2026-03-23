@@ -22,6 +22,26 @@ fn roundtrip_simple_svg_is_stable() {
 }
 
 #[test]
+fn serializer_canonicalizes_attribute_quotes_to_double_quotes() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><text x='1' y='2'>x</text></svg>"#;
+    let result = optimize(svg, &Config::default()).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><text x="1" y="2">x</text></svg>"#
+    );
+}
+
+#[test]
+fn serializer_escapes_double_quotes_inside_attribute_values() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><rect class='a"b' width="1" height="1"/></svg>"#;
+    let result = optimize(svg, &Config::default()).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><rect class="a&quot;b" width="1" height="1"/></svg>"#
+    );
+}
+
+#[test]
 fn removes_supported_structural_nodes() {
     let svg =
         std::fs::read_to_string(workspace_root().join("tests/fixtures/oracle/remove-comments.svg"))
@@ -107,6 +127,11 @@ fn matches_svgo_oracle_for_remove_useless_stroke_and_fill() {
 #[test]
 fn matches_svgo_oracle_for_remove_unknowns_and_defaults() {
     assert_oracle_fixture("remove-unknowns-and-defaults");
+}
+
+#[test]
+fn matches_svgo_oracle_for_remove_unknowns_and_defaults_foreign_description() {
+    assert_oracle_fixture("remove-unknowns-and-defaults-foreign-description");
 }
 
 #[test]
@@ -596,6 +621,30 @@ fn remove_unknowns_and_defaults_preserves_foreign_object_subtree_and_data_attrs(
 
     let result = optimize(svg, &config).expect("optimize");
     assert_eq!(result.data, svg);
+}
+
+#[test]
+fn remove_unknowns_and_defaults_strips_unknown_unprefixed_children_from_foreign_description_nodes() {
+    let svg = concat!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg">"#,
+        r#"<d:SVGTestCase xmlns:d="http://www.w3.org/2000/02/svg/testsuite/description/">"#,
+        r#"<d:testDescription xmlns="http://www.w3.org/1999/xhtml"><p>Test</p></d:testDescription>"#,
+        r#"</d:SVGTestCase></svg>"#
+    );
+    let config = Config {
+        plugins: vec![PluginSpec::Name("removeUnknownsAndDefaults".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        concat!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg">"#,
+            r#"<d:SVGTestCase xmlns:d="http://www.w3.org/2000/02/svg/testsuite/description/">"#,
+            r#"<d:testDescription xmlns="http://www.w3.org/1999/xhtml"/></d:SVGTestCase></svg>"#,
+        )
+    );
 }
 
 #[test]

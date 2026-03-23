@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <d:SVGTestCase xmlns:d="http://www.w3.org/2000/02/svg/testsuite/description/">
+    <d:testDescription xmlns="http://www.w3.org/1999/xhtml">
+      <p>Test</p>
+    </d:testDescription>
+    <d:operatorScript xmlns="http://www.w3.org/1999/xhtml">
+      <div>Keep container, drop subtree</div>
+    </d:operatorScript>
+  </d:SVGTestCase>
+</svg>

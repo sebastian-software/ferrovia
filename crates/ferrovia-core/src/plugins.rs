@@ -5379,8 +5379,11 @@ fn should_remove_unknown_child(doc: &Document, parent_id: usize, child_name: &st
     let Some(parent_name) = node_element_name(doc, parent_id) else {
         return false;
     };
-    if parent_name.contains(':') || parent_name == "foreignObject" {
+    if parent_name == "foreignObject" {
         return false;
+    }
+    if parent_name.contains(':') {
+        return !child_name.contains(':') && !is_known_svg_element(child_name);
     }
     if let Some(allowed) = explicit_allowed_children(parent_name) {
         return !allowed.contains(&child_name);
