@@ -39,25 +39,40 @@ Status: Active
 - `preset-default` is implemented and wired end-to-end.
 - Local preset/default fixture gates are green.
 - First corpus sampling still shows a dense W3C mismatch wall, especially in `W3C_SVG_11_TestSuite/svg/animate-*`.
-- First reproducible `smoke-20` triage result:
-  - `20 / 20` mismatches
-  - `foreign-descriptive-subtree-retained`: `20`
-  - `serializer-quote-normalization`: `19`
+- Baseline before the first corpus-driven fix:
+  - `smoke-20`: `20 / 20` mismatches
+  - dominant cluster: `foreign-descriptive-subtree-retained` on all 20 files
+- Current state after closing the first `removeUnknownsAndDefaults` W3C description fix:
+  - `smoke-20`: `18 / 20` mismatches
+  - `sample-100`: `83 / 100` mismatches
+  - `foreign-descriptive-subtree-retained`: reduced to `1` in `sample-100`
+  - `serializer-quote-normalization`: `14` in `sample-100`
+  - `transform-folding-and-shape-normalization`: `4` in `sample-100`
+- Current state after serializer quote normalization:
+  - `smoke-20`: `17 / 20` mismatches
+  - `sample-100`: `80 / 100` mismatches
+  - `serializer-quote-normalization`: reduced to `11` in `sample-100`
+  - `transform-folding-and-shape-normalization`: still `4` in `sample-100`
+  - `unclassified`: still the dominant remainder and the next investigation target
 
 ## Active Cluster Backlog
 1. `foreign-descriptive-subtree-retained`
    - Symptom: Ferrovia preserves XHTML child content under foreign namespaced W3C description elements such as `d:testDescription`, while SVGO strips the unknown subtree and keeps the container element.
    - Expected owner: `removeUnknownsAndDefaults`
-   - Status: In progress
+   - Status: Mostly closed; one remaining `sample-100` occurrence to verify
 2. `serializer-quote-normalization`
    - Symptom: Ferrovia preserves input single quotes more often than SVGO, which tends to serialize canonical double-quoted attributes.
    - Expected owner: serializer normalization
-   - Status: Identified
+   - Status: In progress; most obvious serializer cases are reduced, but more remain
 3. `transform-folding-and-shape-normalization`
    - Symptom: Some W3C animation files still differ because SVGO folds transforms or shape geometry further than Ferrovia.
    - Expected owner: geometry / serializer interaction
    - Status: Identified
-4. `namespace-and-reference-cleanup`
+4. `unclassified`
+   - Symptom: Remaining corpus mismatches that are no longer explained by the first closed W3C-description cluster or the current quote/transform heuristics.
+   - Expected owner: next triage pass
+   - Status: Next investigation bucket
+5. `namespace-and-reference-cleanup`
    - Symptom: Namespace removal and reference tracking still need broader corpus validation beyond the already fixed detached-subtree case.
    - Expected owner: `removeUnusedNS` and shared reference helpers
    - Status: Open
@@ -67,6 +82,7 @@ Status: Active
 - Define corpus profiles in the shell wrapper.
 - Close `foreign-descriptive-subtree-retained`.
 - Remeasure `smoke-20` and `sample-100`, then update this file with the next dominant cluster.
+- Result: complete. The next explicit low-risk target is `serializer-quote-normalization`.
 
 ## Commands
 - Corpus gate:

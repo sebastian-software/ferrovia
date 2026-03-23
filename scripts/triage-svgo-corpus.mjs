@@ -266,7 +266,7 @@ function classifyMismatch({ ferrovia, oracle, diff }) {
 
 function containsForeignDescriptionSubtree(ferrovia, oracle) {
   return (
-    /<d:(testDescription|operatorScript|passCriteria)\b[^>]*>\s*</.test(ferrovia) &&
+    /<d:(testDescription|operatorScript|passCriteria)\b(?:(?!\/>).)*>\s*</s.test(ferrovia) &&
     /<d:(testDescription|operatorScript|passCriteria)\b[^>]*\/>/.test(oracle)
   );
 }
