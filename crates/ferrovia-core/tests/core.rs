@@ -844,3 +844,8 @@ fn convert_path_data_utilizes_absolute_when_shorter() {
         r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0h10v10H0Z"/></svg>"#
     );
 }
+
+#[test]
+fn convert_path_data_bakes_affine_transforms_into_non_arc_paths() {
+    assert_oracle_fixture("convert-path-data-transform");
+}

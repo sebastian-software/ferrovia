@@ -1934,16 +1934,24 @@ fn convert_path_data(doc: &mut Document, params: Option<&Value>) {
         if element.name != "path" {
             continue;
         }
-        let Some(attribute) = attribute_named_mut(element.attributes.as_mut_slice(), "d") else {
+        let Some(d_value) =
+            attribute_value(element.attributes.as_slice(), "d").map(ToOwned::to_owned)
+        else {
             continue;
         };
+        let transform_value =
+            attribute_value(element.attributes.as_slice(), "transform").map(ToOwned::to_owned);
 
-        let Ok(mut items) = parse_path_items(attribute.value.as_str()) else {
+        let Ok(mut items) = parse_path_items(d_value.as_str()) else {
             continue;
         };
         if items.is_empty() {
             continue;
         }
+
+        let baked_transform = transform_value
+            .as_deref()
+            .is_some_and(|transform| bake_affine_transform_into_path_items(&mut items, transform));
 
         convert_path_to_relative(&mut items);
         if params.line_shorthands {
@@ -1959,7 +1967,12 @@ fn convert_path_data(doc: &mut Document, params: Option<&Value>) {
             utilize_absolute_path_items(&mut items, params);
         }
 
-        attribute.value = serialize_path_items(&items, params);
+        if let Some(attribute) = attribute_named_mut(element.attributes.as_mut_slice(), "d") {
+            attribute.value = serialize_path_items(&items, params);
+        }
+        if baked_transform {
+            element.attributes.retain(|attribute| attribute.name != "transform");
+        }
     }
 }
 
@@ -2017,6 +2030,26 @@ fn path_has_marker_mid(doc: &Document, node_id: usize, rules: &[String]) -> bool
 
 fn parse_path_items(value: &str) -> std::result::Result<Vec<PathItem>, String> {
     parse_path_commands(value).map(|commands| commands.into_iter().map(PathItem::from).collect())
+}
+
+fn bake_affine_transform_into_path_items(items: &mut [PathItem], transform: &str) -> bool {
+    if items
+        .iter()
+        .any(|item| matches!(item.command, 'A' | 'a'))
+    {
+        return false;
+    }
+
+    let Ok(transforms) = parse_transform_items(transform) else {
+        return false;
+    };
+    if transforms.is_empty() {
+        return false;
+    }
+
+    absolutize_path_items(items);
+    let matrix = transform_to_matrix(&transforms_multiply(&transforms));
+    apply_affine_transform_to_path_items(items, matrix)
 }
 
 impl From<PathCommand> for PathItem {
@@ -2221,6 +2254,205 @@ fn convert_path_to_relative(items: &mut [PathItem]) {
             _ => {}
         }
     }
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "Absolute normalization mirrors the existing relative-path pass"
+)]
+fn absolutize_path_items(items: &mut [PathItem]) {
+    let mut cursor_x = 0.0;
+    let mut cursor_y = 0.0;
+    let mut start_x = 0.0;
+    let mut start_y = 0.0;
+
+    for item in items {
+        match item.command {
+            'M' => {
+                cursor_x = item.args[0];
+                cursor_y = item.args[1];
+                start_x = cursor_x;
+                start_y = cursor_y;
+            }
+            'm' => {
+                cursor_x += item.args[0];
+                cursor_y += item.args[1];
+                item.command = 'M';
+                item.args[0] = cursor_x;
+                item.args[1] = cursor_y;
+                start_x = cursor_x;
+                start_y = cursor_y;
+            }
+            'L' | 'T' => {
+                cursor_x = item.args[0];
+                cursor_y = item.args[1];
+            }
+            'l' => {
+                cursor_x += item.args[0];
+                cursor_y += item.args[1];
+                item.command = 'L';
+                item.args[0] = cursor_x;
+                item.args[1] = cursor_y;
+            }
+            'H' => cursor_x = item.args[0],
+            'h' => {
+                cursor_x += item.args[0];
+                item.command = 'H';
+                item.args[0] = cursor_x;
+            }
+            'V' => cursor_y = item.args[0],
+            'v' => {
+                cursor_y += item.args[0];
+                item.command = 'V';
+                item.args[0] = cursor_y;
+            }
+            'C' => {
+                cursor_x = item.args[4];
+                cursor_y = item.args[5];
+            }
+            'c' => {
+                item.command = 'C';
+                item.args[0] += cursor_x;
+                item.args[1] += cursor_y;
+                item.args[2] += cursor_x;
+                item.args[3] += cursor_y;
+                cursor_x += item.args[4];
+                cursor_y += item.args[5];
+                item.args[4] = cursor_x;
+                item.args[5] = cursor_y;
+            }
+            'S' | 'Q' => {
+                cursor_x = item.args[2];
+                cursor_y = item.args[3];
+            }
+            's' => {
+                item.command = 'S';
+                item.args[0] += cursor_x;
+                item.args[1] += cursor_y;
+                cursor_x += item.args[2];
+                cursor_y += item.args[3];
+                item.args[2] = cursor_x;
+                item.args[3] = cursor_y;
+            }
+            'q' => {
+                item.command = 'Q';
+                item.args[0] += cursor_x;
+                item.args[1] += cursor_y;
+                cursor_x += item.args[2];
+                cursor_y += item.args[3];
+                item.args[2] = cursor_x;
+                item.args[3] = cursor_y;
+            }
+            't' => {
+                cursor_x += item.args[0];
+                cursor_y += item.args[1];
+                item.command = 'T';
+                item.args[0] = cursor_x;
+                item.args[1] = cursor_y;
+            }
+            'A' => {
+                cursor_x = item.args[5];
+                cursor_y = item.args[6];
+            }
+            'a' => {
+                item.command = 'A';
+                cursor_x += item.args[5];
+                cursor_y += item.args[6];
+                item.args[5] = cursor_x;
+                item.args[6] = cursor_y;
+            }
+            'Z' | 'z' => {
+                item.command = 'z';
+                cursor_x = start_x;
+                cursor_y = start_y;
+            }
+            _ => {}
+        }
+    }
+}
+
+fn apply_affine_transform_to_path_items(items: &mut [PathItem], matrix: [f64; 6]) -> bool {
+    let mut source_cursor_x = 0.0;
+    let mut source_cursor_y = 0.0;
+    let mut source_start_x = 0.0;
+    let mut source_start_y = 0.0;
+
+    for item in items {
+        match item.command {
+            'M' => {
+                let original_x = item.args[0];
+                let original_y = item.args[1];
+                let (x, y) = apply_affine_point(matrix, original_x, original_y);
+                item.args[0] = x;
+                item.args[1] = y;
+                source_cursor_x = original_x;
+                source_cursor_y = original_y;
+                source_start_x = source_cursor_x;
+                source_start_y = source_cursor_y;
+            }
+            'L' | 'T' => {
+                let original_x = item.args[0];
+                let original_y = item.args[1];
+                source_cursor_x = original_x;
+                source_cursor_y = original_y;
+                let (x, y) = apply_affine_point(matrix, original_x, original_y);
+                item.args[0] = x;
+                item.args[1] = y;
+            }
+            'H' => {
+                let original_x = item.args[0];
+                source_cursor_x = original_x;
+                let (x, y) = apply_affine_point(matrix, original_x, source_cursor_y);
+                item.command = 'L';
+                item.args = vec![x, y];
+            }
+            'V' => {
+                let original_y = item.args[0];
+                source_cursor_y = original_y;
+                let (x, y) = apply_affine_point(matrix, source_cursor_x, original_y);
+                item.command = 'L';
+                item.args = vec![x, y];
+            }
+            'C' => {
+                let original_x = item.args[4];
+                let original_y = item.args[5];
+                source_cursor_x = original_x;
+                source_cursor_y = original_y;
+                let (x1, y1) = apply_affine_point(matrix, item.args[0], item.args[1]);
+                let (x2, y2) = apply_affine_point(matrix, item.args[2], item.args[3]);
+                let (x, y) = apply_affine_point(matrix, original_x, original_y);
+                item.args = vec![x1, y1, x2, y2, x, y];
+            }
+            'S' | 'Q' => {
+                let original_x = item.args[2];
+                let original_y = item.args[3];
+                source_cursor_x = original_x;
+                source_cursor_y = original_y;
+                let (x1, y1) = apply_affine_point(matrix, item.args[0], item.args[1]);
+                let (x, y) = apply_affine_point(matrix, original_x, original_y);
+                item.args = vec![x1, y1, x, y];
+            }
+            'z' | 'Z' => {
+                source_cursor_x = source_start_x;
+                source_cursor_y = source_start_y;
+            }
+            'A' | 'a' | 'm' | 'l' | 'h' | 'v' | 'c' | 's' | 'q' | 't' => return false,
+            _ => {}
+        }
+    }
+
+    true
+}
+
+#[expect(
+    clippy::missing_const_for_fn,
+    reason = "Floating-point affine math stays as a regular helper for broad toolchain compatibility"
+)]
+fn apply_affine_point(matrix: [f64; 6], x: f64, y: f64) -> (f64, f64) {
+    (
+        matrix[0].mul_add(x, matrix[2].mul_add(y, matrix[4])),
+        matrix[1].mul_add(x, matrix[3].mul_add(y, matrix[5])),
+    )
 }
 
 fn convert_line_shorthands(items: &mut [PathItem]) {
