@@ -122,6 +122,16 @@ Status: Active
     - mixed-content / text / script serialization
     - `convertPathData` and path canonicalization drift
     - transform bake-in and geometry rewrite drift
+- Current state after mixed-content and script serializer normalization:
+  - `smoke-20`: `0 / 20` mismatches
+  - `sample-100`: `32 / 100` mismatches
+  - closed causes in this slice:
+    - mixed `text` containers now keep SVGO-like source-faithful line structure instead of being flattened into a single line
+    - `script` text now trims only outer indentation while preserving inner line structure, which closes a chunk of the W3C script/mixed-content drift
+  - the remaining wall is now even more concentrated in:
+    - `convertPathData` and path canonicalization drift
+    - transform bake-in and geometry rewrite drift
+    - a small residual serializer/reference tail
 
 ## Active Cluster Backlog
 1. `smil-reference-preservation`
@@ -145,7 +155,7 @@ Status: Active
      - `animate-script-elem-01-b.svg`
      - `animate-struct-dom-01-b.svg`
    - Expected owner: serializer normalization
-   - Status: Highest ROI remaining block
+   - Status: materially reduced; no longer the top blocker
 3. `path-canonicalization`
    - Symptom: `convertPathData` still chooses different absolute/relative forms or path shorthands than SVGO.
    - Typical diffs:
@@ -187,15 +197,15 @@ Status: Active
   - `remaining-w3c-harness-structure-retained`
 
 ## Next Execution Block
-- Close `mixed-content-serialization` first.
+- Close `path-canonicalization` first.
 - Keep scope tight:
-  - stay source-faithful in `<script>` and mixed `text` containers instead of flattening indentation too aggressively
-  - keep inline animate/set children aligned with SVGO’s text-node trimming rules
-  - treat script blocks and event-driven animation fixtures as serializer work first, not as parser or plugin semantics changes
+  - continue on corpus-proven `convertPathData` drift only
+  - prioritize command-form parity, shorthand choice, and absolute/relative selection before any broader geometry refactors
+  - keep transform/geometry rewrites conservative until the path serializer and command canonicalization align more closely with SVGO
 - Remeasure:
   - `smoke-20`
   - `sample-100`
-- Only after that continue with the broader `path-canonicalization` and transform/geometry blocks.
+- Only after that continue with the broader transform/geometry block and the small residual serializer/reference tail.
 
 ## Commands
 - Corpus gate:
