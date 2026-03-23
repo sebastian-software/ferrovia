@@ -146,6 +146,21 @@ Status: Active
   - the remaining wall has shifted again:
     - the old path-canonicalization block is materially smaller
     - the dominant remainder is now mostly broader geometry / transform / structure drift plus a large `unclassified` tail outside the simple command-form mismatches
+- Current state after preserving mixed-content whitespace nodes in `text`-like containers:
+  - `smoke-20`: `0 / 20` mismatches
+  - `sample-100`: `23 / 100` mismatches
+  - closed causes in this slice:
+    - parser and serializer now keep whitespace-only text nodes inside `text`-like mixed-content containers instead of discarding them as globally empty
+    - SVGO-like line structure is now preserved between text payload and animation children such as `animateMotion`, `animateTransform`, and `set`
+  - representative wins:
+    - `animate-elem-32/34/36/44-t.svg`
+    - `animate-elem-60/62/77/78/80/81/91-t.svg`
+    - the mixed-content portion of `animate-elem-24/30-t.svg`
+  - the remaining wall is now narrower and more technical:
+    - numeric / transform precision drift, for example `rotate(-15 721.118 -194.84)` vs `rotate(-15 721.118 -194.841)` in `animate-elem-24-t.svg`
+    - path canonicalization drift, for example `m95 40 20 20-20 20-20-20z` vs `m95 40 20 20L95 80 75 60z` in `color-prop-03-t.svg`
+    - merge-paths / structural grouping drift, for example `coords-trans-01-b.svg`
+    - one remaining foreign-description case and one animated gradient/default-style case
 
 ## Active Cluster Backlog
 1. `smil-reference-preservation`
@@ -176,24 +191,32 @@ Status: Active
     - `s` vs `c`
     - `Q/q` choice drift
     - different command grouping or shape-to-path output forms
+    - relative line runs converted to absolute `L` even when SVGO keeps the compact relative form
   - Representative files:
-    - `animate-elem-28/32/34/37-t.svg`
+    - `color-prop-03-t.svg`
     - `conform-viewers-01-t.svg`
   - Expected owner: `convertPathData`, shape conversion, and path serializer interaction
   - Status: Partially closed; remaining tail now overlaps more with transform/shape rewriting than with simple shorthand selection
 4. `transform-and-geometry-rewrite`
-   - Symptom: Ferrovia bakes transforms or rewrites geometry in places where SVGO leaves the structural transform/shape form intact.
-   - Representative files:
-     - `animate-elem-35/80/81-t.svg`
+  - Symptom: Ferrovia bakes transforms or rewrites geometry in places where SVGO leaves the structural transform/shape form intact.
+  - Representative files:
+     - `animate-elem-24-t.svg`
+     - `coords-trans-07-t.svg`
    - Expected owner: transform gating and geometry normalization
-   - Status: Open, but lower ROI than SMIL/default and pure serializer work
+   - Status: Open and now one of the highest-ROI remaining causes
 5. `foreign-descriptive-subtree-retained`
-   - Symptom: One remaining foreign-description case still retains XHTML child content that SVGO strips.
-   - Representative file:
+  - Symptom: One remaining foreign-description case still retains XHTML child content that SVGO strips.
+  - Representative file:
      - `animate-elem-82-t.svg`
    - Expected owner: `removeUnknownsAndDefaults`
    - Status: Nearly closed; one known `sample-100` occurrence
-6. `serializer-quote-normalization`
+6. `animated-gradient-defaults`
+   - Symptom: Ferrovia still drops animated inherited/default presentation values on gradient wrapper groups that SVGO keeps.
+   - Representative file:
+     - `animate-pservers-grad-01-b.svg`
+   - Expected owner: `removeUnknownsAndDefaults` and inherited-style cleanup around animated `stop-color`
+   - Status: One known `sample-100` occurrence
+7. `serializer-quote-normalization`
    - Symptom: One remaining file still differs only by quote/attribute normalization.
    - Representative file:
      - `conform-viewers-03-f.svg`

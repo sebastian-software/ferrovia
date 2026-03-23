@@ -66,9 +66,24 @@ fn serializer_preserves_mixed_text_indentation_around_children() {
             r#"<svg xmlns="http://www.w3.org/2000/svg"><text x="0" y="0">"#,
             "\n  Hello\n  ",
             r#"<set attributeName="fill" to="red"/>"#,
+            "\n",
             r#"</text></svg>"#,
         )
     );
+}
+
+#[test]
+fn serializer_preserves_whitespace_between_animation_children_in_text() {
+    let svg = concat!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><text x="0" y="0">"#,
+        "\n  Hello\n  ",
+        r#"<set attributeName="fill" to="red"/>"#,
+        "\n  ",
+        r#"<set attributeName="stroke" to="blue"/>"#,
+        "\n</text></svg>",
+    );
+    let result = optimize(svg, &Config::default()).expect("optimize");
+    assert_eq!(result.data, svg);
 }
 
 #[test]

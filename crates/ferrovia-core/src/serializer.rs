@@ -146,7 +146,11 @@ fn should_preserve_whitespace_text(doc: &Document, id: NodeId) -> bool {
 
     matches!(
         &doc.node(parent_id).kind,
-        NodeKind::Element(element) if element.name == "a"
+        NodeKind::Element(element)
+            if matches!(
+                element.name.as_str(),
+                "a" | "text" | "tspan" | "textPath" | "altGlyph"
+            )
     )
 }
 
