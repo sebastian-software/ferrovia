@@ -132,6 +132,20 @@ Status: Active
     - `convertPathData` and path canonicalization drift
     - transform bake-in and geometry rewrite drift
     - a small residual serializer/reference tail
+- Current state after the first focused path-canonicalization slice:
+  - `smoke-20`: `0 / 20` mismatches
+  - `sample-100`: `28 / 100` mismatches
+  - closed causes in this slice:
+    - `convertPathData` now rebuilds smooth cubic shorthands from reflected control points instead of only handling the trivial `0,0`/cursor case
+    - `convertPathData` now chooses absolute quadratic commands when they serialize shorter, which closes the alternating `q/Q` drift in W3C animation shapes
+    - redundant explicit line-backtracking to the subpath start immediately before `z` is now removed, which matches SVGO on zero-height/closepath forms such as `h25z`
+  - representative wins:
+    - `animate-elem-28-t.svg`
+    - `animate-elem-37-t.svg`
+    - the `convertPathData` part of `animate-elem-32/34-t.svg`
+  - the remaining wall has shifted again:
+    - the old path-canonicalization block is materially smaller
+    - the dominant remainder is now mostly broader geometry / transform / structure drift plus a large `unclassified` tail outside the simple command-form mismatches
 
 ## Active Cluster Backlog
 1. `smil-reference-preservation`
@@ -157,16 +171,16 @@ Status: Active
    - Expected owner: serializer normalization
    - Status: materially reduced; no longer the top blocker
 3. `path-canonicalization`
-   - Symptom: `convertPathData` still chooses different absolute/relative forms or path shorthands than SVGO.
-   - Typical diffs:
-     - `s` vs `c`
-     - `Q/q` choice drift
-     - different command grouping or shape-to-path output forms
-   - Representative files:
-     - `animate-elem-28/32/34/37-t.svg`
-     - `conform-viewers-01-t.svg`
-   - Expected owner: `convertPathData`, shape conversion, and path serializer interaction
-   - Status: Open
+  - Symptom: `convertPathData` still chooses different absolute/relative forms or path shorthands than SVGO.
+  - Typical diffs:
+    - `s` vs `c`
+    - `Q/q` choice drift
+    - different command grouping or shape-to-path output forms
+  - Representative files:
+    - `animate-elem-28/32/34/37-t.svg`
+    - `conform-viewers-01-t.svg`
+  - Expected owner: `convertPathData`, shape conversion, and path serializer interaction
+  - Status: Partially closed; remaining tail now overlaps more with transform/shape rewriting than with simple shorthand selection
 4. `transform-and-geometry-rewrite`
    - Symptom: Ferrovia bakes transforms or rewrites geometry in places where SVGO leaves the structural transform/shape form intact.
    - Representative files:
@@ -197,11 +211,11 @@ Status: Active
   - `remaining-w3c-harness-structure-retained`
 
 ## Next Execution Block
-- Close `path-canonicalization` first.
+- Continue the remaining `path-canonicalization` tail only where the diff is still command-form driven.
 - Keep scope tight:
-  - continue on corpus-proven `convertPathData` drift only
-  - prioritize command-form parity, shorthand choice, and absolute/relative selection before any broader geometry refactors
-  - keep transform/geometry rewrites conservative until the path serializer and command canonicalization align more closely with SVGO
+  - continue on corpus-proven `convertPathData` drift only where it is still about command-form parity
+  - prioritize the residual `conform-viewers-01-t.svg`-style degenerations and curve-to-line reductions if they are still isolated and high ROI
+  - then switch to the broader transform/geometry block and translated W3C structure drift, which now dominate the remaining sample mismatches more than the simple shorthand cases
 - Remeasure:
   - `smoke-20`
   - `sample-100`
