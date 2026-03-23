@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::ast::{Attribute, Document, NodeId, NodeKind};
 use crate::config::Js2Svg;
 
@@ -37,9 +39,9 @@ fn serialize_node(doc: &Document, id: NodeId, out: &mut String, options: &Js2Svg
             newline(out, options);
         }
         NodeKind::Text(text) => {
-            if text.trim().is_empty() && !should_preserve_whitespace_text(doc, id) {
+            let Some(text) = normalized_text_for_context(doc, id, text) else {
                 return;
-            }
+            };
             if options.pretty {
                 let trimmed = text.trim();
                 if trimmed.is_empty() {
@@ -49,7 +51,7 @@ fn serialize_node(doc: &Document, id: NodeId, out: &mut String, options: &Js2Svg
                 out.push_str(&escape_text(trimmed));
                 newline(out, options);
             } else {
-                out.push_str(&escape_text(text));
+                out.push_str(&escape_text(text.as_ref()));
             }
         }
         NodeKind::Cdata(data) => {
@@ -113,9 +115,25 @@ fn serialize_node(doc: &Document, id: NodeId, out: &mut String, options: &Js2Svg
 
 fn should_serialize_node(doc: &Document, id: NodeId) -> bool {
     match &doc.node(id).kind {
-        NodeKind::Text(text) => !text.trim().is_empty() || should_preserve_whitespace_text(doc, id),
+        NodeKind::Text(text) => normalized_text_for_context(doc, id, text).is_some(),
         _ => true,
     }
+}
+
+fn normalized_text_for_context<'a>(doc: &'a Document, id: NodeId, text: &'a str) -> Option<Cow<'a, str>> {
+    if text.trim().is_empty() && !should_preserve_whitespace_text(doc, id) {
+        return None;
+    }
+
+    if should_trim_mixed_text_indentation(doc, id, text) {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        return Some(Cow::Owned(trimmed.to_string()));
+    }
+
+    Some(Cow::Borrowed(text))
 }
 
 fn should_preserve_whitespace_text(doc: &Document, id: NodeId) -> bool {
@@ -130,6 +148,31 @@ fn should_preserve_whitespace_text(doc: &Document, id: NodeId) -> bool {
         &doc.node(parent_id).kind,
         NodeKind::Element(element) if element.name == "a"
     )
+}
+
+fn should_trim_mixed_text_indentation(doc: &Document, id: NodeId, text: &str) -> bool {
+    if !text.contains(['\n', '\r', '\t']) || text.trim().is_empty() {
+        return false;
+    }
+
+    let Some(parent_id) = doc.node(id).parent else {
+        return false;
+    };
+
+    let NodeKind::Element(parent) = &doc.node(parent_id).kind else {
+        return false;
+    };
+
+    if !matches!(
+        parent.name.as_str(),
+        "text" | "tspan" | "textPath" | "altGlyph" | "tref"
+    ) {
+        return false;
+    }
+
+    doc.children(parent_id).any(|child_id| {
+        child_id != id && matches!(doc.node(child_id).kind, NodeKind::Element(_))
+    })
 }
 
 fn serialize_attribute(attribute: &Attribute, out: &mut String) {

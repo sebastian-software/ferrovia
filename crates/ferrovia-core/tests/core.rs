@@ -52,6 +52,21 @@ fn serializer_escapes_quotes_and_markup_inside_text_nodes() {
 }
 
 #[test]
+fn serializer_trims_indentation_around_mixed_text_children() {
+    let svg = concat!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><text x="0" y="0">"#,
+        "\n  Hello\n  ",
+        r#"<set attributeName="fill" to="red"/>"#,
+        "\n</text></svg>",
+    );
+    let result = optimize(svg, &Config::default()).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><text x="0" y="0">Hello<set attributeName="fill" to="red"/></text></svg>"#
+    );
+}
+
+#[test]
 fn removes_supported_structural_nodes() {
     let svg =
         std::fs::read_to_string(workspace_root().join("tests/fixtures/oracle/remove-comments.svg"))
@@ -239,6 +254,29 @@ fn cleanup_ids_rewrites_begin_references() {
     assert_eq!(
         result.data,
         r#"<svg xmlns="http://www.w3.org/2000/svg"><path id="a" d="M0 0"/><animate begin="a.begin"/></svg>"#
+    );
+}
+
+#[test]
+fn cleanup_ids_preserves_begin_list_spacing_when_rewriting_ids() {
+    let svg = concat!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg">"#,
+        r#"<path id="shape" d="M0 0"><animate id="pulse" begin="0s; pulse.end + 1s"/></path>"#,
+        r#"<animate begin="shape.begin; pulse.end + 2s"/></svg>"#,
+    );
+    let config = Config {
+        plugins: vec![PluginSpec::Name("cleanupIds".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        concat!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg">"#,
+            r#"<path id="b" d="M0 0"><animate id="a" begin="0s; a.end + 1s"/></path>"#,
+            r#"<animate begin="b.begin; a.end + 2s"/></svg>"#,
+        )
     );
 }
 
@@ -555,6 +593,30 @@ fn move_group_attrs_to_elems_keeps_group_transform_when_url_reference_is_present
     assert_eq!(
         result.data,
         r#"<svg xmlns="http://www.w3.org/2000/svg"><g transform="scale(2)" clip-path="url(#clip)"><path d="M0 0"/></g></svg>"#
+    );
+}
+
+#[test]
+fn move_group_attrs_to_elems_repeats_for_nested_groups_created_in_same_pass() {
+    let svg = concat!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><g transform="translate(20 50)"><g>"#,
+        r#"<path d="M120 200L170 200"/><path d="M120 167L170 167"/>"#,
+        r#"</g></g></svg>"#
+    );
+    let config = Config {
+        plugins: vec![PluginSpec::Name("moveGroupAttrsToElems".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        concat!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg"><g><g>"#,
+            r#"<path d="M120 200L170 200" transform="translate(20 50)"/>"#,
+            r#"<path d="M120 167L170 167" transform="translate(20 50)"/>"#,
+            r#"</g></g></svg>"#
+        )
     );
 }
 
@@ -916,6 +978,52 @@ fn convert_path_data_utilizes_absolute_when_shorter() {
     assert_eq!(
         result.data,
         r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0h10v10H0Z"/></svg>"#
+    );
+}
+
+#[test]
+fn convert_path_data_compacts_moveto_and_line_runs_like_svgo() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M90 258L390 180"/><path d="M-30 0L0 -60L30 0Z"/></svg>"#;
+    let config = Config {
+        plugins: vec![PluginSpec::Name("convertPathData".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="m90 258 300-78"/><path d="M-30 0 0-60 30 0Z"/></svg>"#
+    );
+}
+
+#[test]
+fn convert_path_data_uses_smooth_curve_shorthand_when_first_control_is_current_point() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M90 258C90 258 216 120 390 198"/></svg>"#;
+    let config = Config {
+        plugins: vec![PluginSpec::Name("convertPathData".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M90 258s126-138 300-60"/></svg>"#
+    );
+}
+
+#[test]
+fn convert_path_data_compacts_repeated_curve_commands_into_single_run() {
+    let svg =
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0c10 0 20 0 30 0c10 0 20 0 30 0"/></svg>"#;
+    let config = Config {
+        plugins: vec![PluginSpec::Name("convertPathData".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0c10 0 20 0 30 0 10 0 20 0 30 0"/></svg>"#
     );
 }
 

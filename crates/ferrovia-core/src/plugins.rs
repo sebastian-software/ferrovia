@@ -1954,6 +1954,7 @@ fn convert_path_data(doc: &mut Document, params: Option<&Value>) {
             .is_some_and(|transform| bake_affine_transform_into_path_items(&mut items, transform));
 
         convert_path_to_relative(&mut items);
+        convert_curve_shorthands(&mut items);
         if params.line_shorthands {
             convert_line_shorthands(&mut items);
         }
@@ -1968,7 +1969,7 @@ fn convert_path_data(doc: &mut Document, params: Option<&Value>) {
         }
 
         if let Some(attribute) = attribute_named_mut(element.attributes.as_mut_slice(), "d") {
-            attribute.value = serialize_path_items(&items, params);
+            attribute.value = serialize_path_items(&items, params, !has_marker_mid);
         }
         if baked_transform {
             element.attributes.retain(|attribute| attribute.name != "transform");
@@ -2467,6 +2468,92 @@ fn convert_line_shorthands(items: &mut [PathItem]) {
     }
 }
 
+#[expect(
+    clippy::float_cmp,
+    reason = "Path shorthand detection intentionally mirrors exact SVGO command heuristics"
+)]
+fn convert_curve_shorthands(items: &mut [PathItem]) {
+    let mut cursor_x = 0.0;
+    let mut cursor_y = 0.0;
+    let mut start_x = 0.0;
+    let mut start_y = 0.0;
+
+    for item in items {
+        match item.command {
+            'M' => {
+                cursor_x = item.args[0];
+                cursor_y = item.args[1];
+                start_x = cursor_x;
+                start_y = cursor_y;
+            }
+            'm' => {
+                cursor_x += item.args[0];
+                cursor_y += item.args[1];
+                start_x = cursor_x;
+                start_y = cursor_y;
+            }
+            'C' => {
+                if item.args[0] == cursor_x && item.args[1] == cursor_y {
+                    item.command = 'S';
+                    item.args = vec![item.args[2], item.args[3], item.args[4], item.args[5]];
+                }
+                cursor_x = item.args[2];
+                cursor_y = item.args[3];
+                if item.command == 'C' {
+                    cursor_x = item.args[4];
+                    cursor_y = item.args[5];
+                }
+            }
+            'c' => {
+                if is_zero(item.args[0]) && is_zero(item.args[1]) {
+                    item.command = 's';
+                    item.args = vec![item.args[2], item.args[3], item.args[4], item.args[5]];
+                }
+                if item.command == 's' {
+                    cursor_x += item.args[2];
+                    cursor_y += item.args[3];
+                } else {
+                    cursor_x += item.args[4];
+                    cursor_y += item.args[5];
+                }
+            }
+            'S' | 'Q' => {
+                cursor_x = item.args[2];
+                cursor_y = item.args[3];
+            }
+            's' | 'q' => {
+                cursor_x += item.args[2];
+                cursor_y += item.args[3];
+            }
+            'L' | 'T' => {
+                cursor_x = item.args[0];
+                cursor_y = item.args[1];
+            }
+            'l' | 't' => {
+                cursor_x += item.args[0];
+                cursor_y += item.args[1];
+            }
+            'H' => cursor_x = item.args[0],
+            'h' => cursor_x += item.args[0],
+            'V' => cursor_y = item.args[0],
+            'v' => cursor_y += item.args[0],
+            'A' => {
+                cursor_x = item.args[5];
+                cursor_y = item.args[6];
+            }
+            'a' => {
+                cursor_x += item.args[5];
+                cursor_y += item.args[6];
+            }
+            'Z' | 'z' => {
+                cursor_x = start_x;
+                cursor_y = start_y;
+            }
+            _ => {}
+        }
+    }
+}
+
 fn remove_useless_path_items(items: &mut Vec<PathItem>) {
     items.retain(|item| match item.command {
         'l' => !is_zero(item.args[0]) || !is_zero(item.args[1]),
@@ -2624,7 +2711,131 @@ fn serialized_command_len(command: char, args: &[f64], params: ConvertPathDataPa
     .len()
 }
 
-fn serialize_path_items(items: &[PathItem], params: ConvertPathDataParams) -> String {
+fn serialize_path_items(
+    items: &[PathItem],
+    params: ConvertPathDataParams,
+    compact_repeated_runs: bool,
+) -> String {
+    let compacted = compact_path_items_for_serialization(items, params, compact_repeated_runs);
+    serialize_path_items_raw(&compacted, params)
+}
+
+fn compact_path_items_for_serialization(
+    items: &[PathItem],
+    params: ConvertPathDataParams,
+    compact_repeated_runs: bool,
+) -> Vec<PathItem> {
+    let default = if compact_repeated_runs {
+        compact_repeated_command_runs(compact_moveto_line_runs(items))
+    } else {
+        compact_moveto_line_runs(items)
+    };
+    let Some(candidate) = compact_initial_relative_moveto(items) else {
+        return default;
+    };
+    let candidate = if compact_repeated_runs {
+        compact_repeated_command_runs(candidate)
+    } else {
+        candidate
+    };
+    if serialize_path_items_raw(&candidate, params).len() <= serialize_path_items_raw(&default, params).len() {
+        candidate
+    } else {
+        default
+    }
+}
+
+fn compact_moveto_line_runs(items: &[PathItem]) -> Vec<PathItem> {
+    let mut compacted = Vec::with_capacity(items.len());
+    let mut index = 0;
+    while index < items.len() {
+        let mut current = items[index].clone();
+        let line_command = match current.command {
+            'M' => Some('L'),
+            'm' => Some('l'),
+            _ => None,
+        };
+        if let Some(line_command) = line_command {
+            let mut next_index = index + 1;
+            while next_index < items.len()
+                && items[next_index].command == line_command
+                && items[next_index].args.len() == 2
+            {
+                current.args.extend(items[next_index].args.iter().copied());
+                next_index += 1;
+            }
+            compacted.push(current);
+            index = next_index;
+            continue;
+        }
+        compacted.push(current);
+        index += 1;
+    }
+    compacted
+}
+
+fn compact_initial_relative_moveto(items: &[PathItem]) -> Option<Vec<PathItem>> {
+    let first = items.first()?;
+    if first.command != 'M' {
+        return None;
+    }
+
+    let mut compacted = Vec::with_capacity(items.len());
+    let mut first_compacted = first.clone();
+    first_compacted.command = 'm';
+
+    let mut index = 1;
+    let mut absorbed = 0;
+    while index < items.len() && items[index].command == 'l' && items[index].args.len() == 2 {
+        first_compacted.args.extend(items[index].args.iter().copied());
+        index += 1;
+        absorbed += 1;
+    }
+
+    if absorbed == 0 {
+        return None;
+    }
+
+    compacted.push(first_compacted);
+    compacted.extend(items[index..].iter().cloned());
+    Some(compacted)
+}
+
+fn compact_repeated_command_runs(items: Vec<PathItem>) -> Vec<PathItem> {
+    let mut compacted: Vec<PathItem> = Vec::with_capacity(items.len());
+    for item in items {
+        let Some(arity) = serialization_command_arity(item.command) else {
+            compacted.push(item);
+            continue;
+        };
+        if item.args.len() != arity {
+            compacted.push(item);
+            continue;
+        }
+        if let Some(previous) = compacted.last_mut()
+            && previous.command == item.command
+            && previous.args.len() % arity == 0
+        {
+            previous.args.extend(item.args);
+            continue;
+        }
+        compacted.push(item);
+    }
+    compacted
+}
+
+const fn serialization_command_arity(command: char) -> Option<usize> {
+    match command {
+        'L' | 'l' | 'T' | 't' => Some(2),
+        'H' | 'h' | 'V' | 'v' => Some(1),
+        'C' | 'c' => Some(6),
+        'S' | 's' | 'Q' | 'q' => Some(4),
+        'A' | 'a' => Some(7),
+        _ => None,
+    }
+}
+
+fn serialize_path_items_raw(items: &[PathItem], params: ConvertPathDataParams) -> String {
     let mut output = String::new();
     for item in items {
         output.push(item.command);
@@ -2869,6 +3080,7 @@ fn write_merged_path_data(
             negative_extra_space: true,
             no_space_after_flags: params.no_space_after_flags,
         },
+        true,
     );
     let NodeKind::Element(element) = &mut doc.node_mut(node_id).kind else {
         return;
@@ -4209,74 +4421,80 @@ fn apply_paint_style_value(style: &mut PaintStyle, name: &str, value: Option<&st
 }
 
 fn move_group_attrs_to_elems(doc: &mut Document) {
-    let target_ids: Vec<_> = doc
-        .nodes
-        .iter()
-        .enumerate()
-        .skip(1)
-        .filter_map(|(id, node)| {
-            let NodeKind::Element(element) = &node.kind else {
-                return None;
-            };
-            if element.name != "g" || doc.node(id).first_child.is_none() {
-                return None;
-            }
-
-            let transform = attribute_named(element.attributes.as_slice(), "transform")?;
-
-            if element.attributes.iter().any(|attribute| {
-                is_reference_property(attribute.name.as_str())
-                    && includes_url_reference(attribute.value.as_str())
-            }) {
-                return None;
-            }
-
-            if !doc.children(id).all(|child_id| {
-                let NodeKind::Element(child) = &doc.node(child_id).kind else {
-                    return false;
+    loop {
+        let target_ids: Vec<_> = doc
+            .nodes
+            .iter()
+            .enumerate()
+            .skip(1)
+            .filter_map(|(id, node)| {
+                let NodeKind::Element(element) = &node.kind else {
+                    return None;
                 };
-                is_group_transform_target(child.name.as_str())
-                    && attribute_value(child.attributes.as_slice(), "id").is_none()
-            }) {
-                return None;
-            }
+                if element.name != "g" || doc.node(id).first_child.is_none() {
+                    return None;
+                }
 
-            let _ = transform;
-            Some(id)
-        })
-        .collect();
+                let transform = attribute_named(element.attributes.as_slice(), "transform")?;
 
-    for group_id in target_ids {
-        let transform = match &doc.node(group_id).kind {
-            NodeKind::Element(group) => {
-                let Some(transform) = attribute_named(group.attributes.as_slice(), "transform")
-                else {
-                    continue;
-                };
-                transform.clone()
-            }
-            _ => continue,
-        };
-        let child_ids: Vec<_> = doc.children(group_id).collect();
-        for child_id in child_ids {
-            let NodeKind::Element(child) = &mut doc.node_mut(child_id).kind else {
-                continue;
-            };
-            if let Some(existing) =
-                attribute_named_mut(child.attributes.as_mut_slice(), "transform")
-            {
-                existing.value = format!("{} {}", transform.value, existing.value);
-            } else {
-                child.attributes.push(transform.clone());
-            }
+                if element.attributes.iter().any(|attribute| {
+                    is_reference_property(attribute.name.as_str())
+                        && includes_url_reference(attribute.value.as_str())
+                }) {
+                    return None;
+                }
+
+                if !doc.children(id).all(|child_id| {
+                    let NodeKind::Element(child) = &doc.node(child_id).kind else {
+                        return false;
+                    };
+                    is_group_transform_target(child.name.as_str())
+                        && attribute_value(child.attributes.as_slice(), "id").is_none()
+                }) {
+                    return None;
+                }
+
+                let _ = transform;
+                Some(id)
+            })
+            .collect();
+
+        if target_ids.is_empty() {
+            break;
         }
 
-        let NodeKind::Element(group) = &mut doc.node_mut(group_id).kind else {
-            continue;
-        };
-        group
-            .attributes
-            .retain(|attribute| attribute.name != "transform");
+        for group_id in target_ids {
+            let transform = match &doc.node(group_id).kind {
+                NodeKind::Element(group) => {
+                    let Some(transform) = attribute_named(group.attributes.as_slice(), "transform")
+                    else {
+                        continue;
+                    };
+                    transform.clone()
+                }
+                _ => continue,
+            };
+            let child_ids: Vec<_> = doc.children(group_id).collect();
+            for child_id in child_ids {
+                let NodeKind::Element(child) = &mut doc.node_mut(child_id).kind else {
+                    continue;
+                };
+                if let Some(existing) =
+                    attribute_named_mut(child.attributes.as_mut_slice(), "transform")
+                {
+                    existing.value = format!("{} {}", transform.value, existing.value);
+                } else {
+                    child.attributes.push(transform.clone());
+                }
+            }
+
+            let NodeKind::Element(group) = &mut doc.node_mut(group_id).kind else {
+                continue;
+            };
+            group
+                .attributes
+                .retain(|attribute| attribute.name != "transform");
+        }
     }
 }
 
@@ -6044,6 +6262,8 @@ fn attribute_default_value(element_name: &str, attr_name: &str) -> Option<&'stat
         ("svg", "contentStyleType") => Some("text/css"),
         ("rect", "x") => Some("0"),
         ("rect", "y") => Some("0"),
+        ("text", "x") => Some("0"),
+        ("text", "y") => Some("0"),
         _ => None,
     }
 }
@@ -6454,19 +6674,40 @@ fn rewrite_reference_attribute(
 fn rewrite_reference_value(value: &str, attribute_name: &str, old_id: &str, new_id: &str) -> String {
     let mut rewritten = value.replace(format!("#{old_id}").as_str(), format!("#{new_id}").as_str());
     if attribute_name == "begin" && !rewritten.contains('#') {
-        rewritten = rewritten
-            .split(';')
-            .map(str::trim)
-            .map(|item| {
-                item.strip_prefix(format!("{old_id}.").as_str()).map_or_else(
-                    || item.to_string(),
-                    |tail| format!("{new_id}.{tail}"),
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(";");
+        rewritten = rewrite_begin_reference_value(rewritten.as_str(), old_id, new_id);
     }
     rewritten
+}
+
+fn rewrite_begin_reference_value(value: &str, old_id: &str, new_id: &str) -> String {
+    let mut rewritten = String::with_capacity(value.len());
+    let mut rest = value;
+    loop {
+        let (segment, tail) = match rest.split_once(';') {
+            Some((segment, tail)) => (segment, Some(tail)),
+            None => (rest, None),
+        };
+        rewritten.push_str(rewrite_begin_reference_segment(segment, old_id, new_id).as_str());
+        let Some(tail) = tail else {
+            break;
+        };
+        rewritten.push(';');
+        rest = tail;
+    }
+    rewritten
+}
+
+fn rewrite_begin_reference_segment(segment: &str, old_id: &str, new_id: &str) -> String {
+    let trimmed = segment.trim();
+    let rewritten_trimmed = trimmed
+        .strip_prefix(format!("{old_id}.").as_str())
+        .map_or_else(|| trimmed.to_string(), |tail| format!("{new_id}.{tail}"));
+
+    let leading_len = segment.len() - segment.trim_start().len();
+    let trailing_len = segment.len() - segment.trim_end().len();
+    let prefix = &segment[..leading_len];
+    let suffix = &segment[segment.len() - trailing_len..];
+    format!("{prefix}{rewritten_trimmed}{suffix}")
 }
 
 fn collect_use_references(doc: &Document) -> HashMap<String, Vec<usize>> {
