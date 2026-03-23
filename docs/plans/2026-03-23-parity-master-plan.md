@@ -212,6 +212,19 @@ Status: Active
     - numeric path-coordinate tie-breaks in transformed or rotated helper shapes
     - zero-length and subpath-canonicalization drift in animated path/line fixtures
     - conservative path merging / grouping in multi-path scaffold documents
+- Current state after normalizing appended standalone-relative moveto commands in `mergePaths`:
+  - `smoke-20`: `0 / 20` mismatches
+  - `sample-100`: `18 / 100` mismatches
+  - closed causes in this slice:
+    - `mergePaths` now rewrites the leading standalone `m` of an appended path into absolute `M` before concatenation, so merged sibling paths keep their original origin instead of being accidentally rebased onto the previous subpath cursor
+  - representative wins:
+    - `animate-elem-44-t.svg`
+  - important note:
+    - this is intentionally narrow and does not relax the bounding-box merge gate itself; `coords-trans-01-b.svg` and parts of `animate-elem-34-t.svg` still sit in the conservative merge/grouping tail
+  - the remaining wall is now dominated by:
+    - numeric path-coordinate tie-breaks in transformed or rotated helper shapes
+    - zero-length and subpath-canonicalization drift in animated path/line fixtures
+    - conservative path merging / grouping in multi-path scaffold documents
 
 ## Active Cluster Backlog
 1. `smil-reference-preservation`
@@ -286,16 +299,21 @@ Status: Active
   - `remaining-w3c-harness-structure-retained`
 
 ## Next Execution Block
-- Tighten zero-length subpath handling so `h0` / `v0` is only preserved when it is truly the only draw command in the subpath.
-- Re-measure `sample-100` and check whether that closes `animate-elem-32-t.svg` and related animation fixtures.
-- After that, choose between:
-  - numeric path-coordinate tie-break work (`animate-elem-30/82-t.svg`, `coords-trans-07-t.svg`)
-  - conservative merge/group work (`animate-elem-34/44-t.svg`, `coords-trans-01-b.svg`)
+- Focus first on the residual conservative merge/grouping tail:
+  - `animate-elem-34-t.svg`
+  - `coords-trans-01-b.svg`
+  - any remaining grouped-scaffold cases where SVGO safely fuses adjacent same-style paths and Ferrovia still leaves them split
+- Keep the merge work narrow:
+  - do not relax `mergePaths` globally without a corpus win
+  - prefer fixes that preserve standalone-path semantics at concatenation boundaries or improve conservative false positives in the current bounds gate
+- If the next merge/group slice stalls, switch to the numeric path tie-break family:
+  - `animate-elem-30-t.svg`
+  - `animate-elem-82-t.svg`
+  - `coords-trans-07-t.svg`
 - Continue the remaining `path-canonicalization` tail only where the diff is still command-form driven.
 - Keep scope tight:
   - continue on corpus-proven `convertPathData` drift only where it is still about command-form parity
-  - prioritize the residual `conform-viewers-01-t.svg`-style degenerations and curve-to-line reductions if they are still isolated and high ROI
-  - then switch to the broader transform/geometry block and translated W3C structure drift, which now dominate the remaining sample mismatches more than the simple shorthand cases
+  - prioritize isolated, measurable wins over broader geometry rewrites
 - Remeasure:
   - `smoke-20`
   - `sample-100`
