@@ -2469,14 +2469,16 @@ fn convert_line_shorthands(items: &mut [PathItem]) {
 }
 
 #[expect(
-    clippy::float_cmp,
-    reason = "Path shorthand detection intentionally mirrors exact SVGO command heuristics"
+    clippy::too_many_lines,
+    reason = "Path shorthand detection keeps the SVGO-shaped state machine in one place"
 )]
 fn convert_curve_shorthands(items: &mut [PathItem]) {
     let mut cursor_x = 0.0;
     let mut cursor_y = 0.0;
     let mut start_x = 0.0;
     let mut start_y = 0.0;
+    let mut previous_cubic_ctrl: Option<(f64, f64)> = None;
+    let mut previous_quadratic_ctrl: Option<(f64, f64)> = None;
 
     for item in items {
         match item.command {
@@ -2485,69 +2487,184 @@ fn convert_curve_shorthands(items: &mut [PathItem]) {
                 cursor_y = item.args[1];
                 start_x = cursor_x;
                 start_y = cursor_y;
+                previous_cubic_ctrl = None;
+                previous_quadratic_ctrl = None;
             }
             'm' => {
                 cursor_x += item.args[0];
                 cursor_y += item.args[1];
                 start_x = cursor_x;
                 start_y = cursor_y;
+                previous_cubic_ctrl = None;
+                previous_quadratic_ctrl = None;
             }
             'C' => {
-                if item.args[0] == cursor_x && item.args[1] == cursor_y {
+                let expected_ctrl_x = previous_cubic_ctrl
+                    .map_or(cursor_x, |(x, _)| cursor_x.mul_add(2.0, -x));
+                let expected_ctrl_y = previous_cubic_ctrl
+                    .map_or(cursor_y, |(_, y)| cursor_y.mul_add(2.0, -y));
+                if is_zero(item.args[0] - expected_ctrl_x)
+                    && is_zero(item.args[1] - expected_ctrl_y)
+                {
                     item.command = 'S';
                     item.args = vec![item.args[2], item.args[3], item.args[4], item.args[5]];
                 }
-                cursor_x = item.args[2];
-                cursor_y = item.args[3];
                 if item.command == 'C' {
+                    previous_cubic_ctrl = Some((item.args[2], item.args[3]));
                     cursor_x = item.args[4];
                     cursor_y = item.args[5];
+                } else {
+                    previous_cubic_ctrl = Some((item.args[0], item.args[1]));
+                    cursor_x = item.args[2];
+                    cursor_y = item.args[3];
                 }
+                previous_quadratic_ctrl = None;
             }
             'c' => {
-                if is_zero(item.args[0]) && is_zero(item.args[1]) {
+                let expected_ctrl_delta =
+                    previous_cubic_ctrl.map_or((0.0, 0.0), |(x, y)| (cursor_x - x, cursor_y - y));
+                if is_zero(item.args[0] - expected_ctrl_delta.0)
+                    && is_zero(item.args[1] - expected_ctrl_delta.1)
+                {
                     item.command = 's';
                     item.args = vec![item.args[2], item.args[3], item.args[4], item.args[5]];
                 }
                 if item.command == 's' {
+                    previous_cubic_ctrl = Some((cursor_x + item.args[0], cursor_y + item.args[1]));
                     cursor_x += item.args[2];
                     cursor_y += item.args[3];
                 } else {
+                    previous_cubic_ctrl = Some((cursor_x + item.args[2], cursor_y + item.args[3]));
                     cursor_x += item.args[4];
                     cursor_y += item.args[5];
                 }
+                previous_quadratic_ctrl = None;
             }
-            'S' | 'Q' => {
+            'S' => {
+                previous_cubic_ctrl = Some((item.args[0], item.args[1]));
                 cursor_x = item.args[2];
                 cursor_y = item.args[3];
+                previous_quadratic_ctrl = None;
             }
-            's' | 'q' => {
+            's' => {
+                previous_cubic_ctrl = Some((cursor_x + item.args[0], cursor_y + item.args[1]));
                 cursor_x += item.args[2];
                 cursor_y += item.args[3];
+                previous_quadratic_ctrl = None;
             }
-            'L' | 'T' => {
+            'Q' => {
+                let expected_ctrl_x = previous_quadratic_ctrl
+                    .map_or(cursor_x, |(x, _)| cursor_x.mul_add(2.0, -x));
+                let expected_ctrl_y = previous_quadratic_ctrl
+                    .map_or(cursor_y, |(_, y)| cursor_y.mul_add(2.0, -y));
+                if is_zero(item.args[0] - expected_ctrl_x)
+                    && is_zero(item.args[1] - expected_ctrl_y)
+                {
+                    item.command = 'T';
+                    item.args = vec![item.args[2], item.args[3]];
+                }
+                if item.command == 'Q' {
+                    previous_quadratic_ctrl = Some((item.args[0], item.args[1]));
+                    cursor_x = item.args[2];
+                    cursor_y = item.args[3];
+                } else {
+                    previous_quadratic_ctrl = Some((expected_ctrl_x, expected_ctrl_y));
+                    cursor_x = item.args[0];
+                    cursor_y = item.args[1];
+                }
+                previous_cubic_ctrl = None;
+            }
+            'q' => {
+                let expected_ctrl_delta = previous_quadratic_ctrl
+                    .map_or((0.0, 0.0), |(x, y)| (cursor_x - x, cursor_y - y));
+                if is_zero(item.args[0] - expected_ctrl_delta.0)
+                    && is_zero(item.args[1] - expected_ctrl_delta.1)
+                {
+                    item.command = 't';
+                    item.args = vec![item.args[2], item.args[3]];
+                }
+                if item.command == 'q' {
+                    previous_quadratic_ctrl =
+                        Some((cursor_x + item.args[0], cursor_y + item.args[1]));
+                    cursor_x += item.args[2];
+                    cursor_y += item.args[3];
+                } else {
+                    previous_quadratic_ctrl =
+                        Some((cursor_x + expected_ctrl_delta.0, cursor_y + expected_ctrl_delta.1));
+                    cursor_x += item.args[0];
+                    cursor_y += item.args[1];
+                }
+                previous_cubic_ctrl = None;
+            }
+            'T' => {
+                previous_quadratic_ctrl = Some(
+                    previous_quadratic_ctrl.map_or((cursor_x, cursor_y), |(x, y)| {
+                        (cursor_x.mul_add(2.0, -x), cursor_y.mul_add(2.0, -y))
+                    }),
+                );
                 cursor_x = item.args[0];
                 cursor_y = item.args[1];
+                previous_cubic_ctrl = None;
             }
-            'l' | 't' => {
+            't' => {
+                previous_quadratic_ctrl = Some(
+                    previous_quadratic_ctrl.map_or((cursor_x, cursor_y), |(x, y)| {
+                        (cursor_x.mul_add(2.0, -x), cursor_y.mul_add(2.0, -y))
+                    }),
+                );
                 cursor_x += item.args[0];
                 cursor_y += item.args[1];
+                previous_cubic_ctrl = None;
             }
-            'H' => cursor_x = item.args[0],
-            'h' => cursor_x += item.args[0],
-            'V' => cursor_y = item.args[0],
-            'v' => cursor_y += item.args[0],
+            'L' => {
+                cursor_x = item.args[0];
+                cursor_y = item.args[1];
+                previous_cubic_ctrl = None;
+                previous_quadratic_ctrl = None;
+            }
+            'l' => {
+                cursor_x += item.args[0];
+                cursor_y += item.args[1];
+                previous_cubic_ctrl = None;
+                previous_quadratic_ctrl = None;
+            }
+            'H' => {
+                cursor_x = item.args[0];
+                previous_cubic_ctrl = None;
+                previous_quadratic_ctrl = None;
+            }
+            'h' => {
+                cursor_x += item.args[0];
+                previous_cubic_ctrl = None;
+                previous_quadratic_ctrl = None;
+            }
+            'V' => {
+                cursor_y = item.args[0];
+                previous_cubic_ctrl = None;
+                previous_quadratic_ctrl = None;
+            }
+            'v' => {
+                cursor_y += item.args[0];
+                previous_cubic_ctrl = None;
+                previous_quadratic_ctrl = None;
+            }
             'A' => {
                 cursor_x = item.args[5];
                 cursor_y = item.args[6];
+                previous_cubic_ctrl = None;
+                previous_quadratic_ctrl = None;
             }
             'a' => {
                 cursor_x += item.args[5];
                 cursor_y += item.args[6];
+                previous_cubic_ctrl = None;
+                previous_quadratic_ctrl = None;
             }
             'Z' | 'z' => {
                 cursor_x = start_x;
                 cursor_y = start_y;
+                previous_cubic_ctrl = None;
+                previous_quadratic_ctrl = None;
             }
             _ => {}
         }
@@ -2555,11 +2672,55 @@ fn convert_curve_shorthands(items: &mut [PathItem]) {
 }
 
 fn remove_useless_path_items(items: &mut Vec<PathItem>) {
-    items.retain(|item| match item.command {
-        'l' => !is_zero(item.args[0]) || !is_zero(item.args[1]),
-        'h' | 'v' => !is_zero(item.args[0]),
-        _ => true,
-    });
+    let mut retained = Vec::with_capacity(items.len());
+    let mut cursor_x = 0.0;
+    let mut cursor_y = 0.0;
+    let mut start_x = 0.0;
+    let mut start_y = 0.0;
+
+    for (index, item) in items.iter().enumerate() {
+        let is_zero_segment = match item.command {
+            'l' => is_zero(item.args[0]) && is_zero(item.args[1]),
+            'h' | 'v' => is_zero(item.args[0]),
+            _ => false,
+        };
+        let endpoint = path_item_endpoint(item, cursor_x, cursor_y);
+        let closes_subpath_explicitly = endpoint.is_some_and(|(end_x, end_y)| {
+            matches!(
+                items.get(index + 1).map(|next| next.command),
+                Some('Z' | 'z')
+            ) && is_zero(end_x - start_x)
+                && is_zero(end_y - start_y)
+                && matches!(item.command, 'l' | 'h' | 'v' | 'L' | 'H' | 'V')
+        });
+
+        if !is_zero_segment && !closes_subpath_explicitly {
+            retained.push(item.clone());
+        }
+
+        match item.command {
+            'M' | 'm' => {
+                if let Some((end_x, end_y)) = endpoint {
+                    cursor_x = end_x;
+                    cursor_y = end_y;
+                    start_x = end_x;
+                    start_y = end_y;
+                }
+            }
+            'Z' | 'z' => {
+                cursor_x = start_x;
+                cursor_y = start_y;
+            }
+            _ => {
+                if let Some((end_x, end_y)) = endpoint {
+                    cursor_x = end_x;
+                    cursor_y = end_y;
+                }
+            }
+        }
+    }
+
+    *items = retained;
 }
 
 fn collapse_repeated_path_items(items: &mut Vec<PathItem>) {
@@ -2660,13 +2821,43 @@ fn utilize_absolute_path_items(items: &mut [PathItem], params: ConvertPathDataPa
                 cursor_x += item.args[4];
                 cursor_y += item.args[5];
             }
-            's' | 'q' => {
+            's' => {
                 cursor_x += item.args[2];
                 cursor_y += item.args[3];
             }
+            'q' => {
+                let abs_ctrl_x = cursor_x + item.args[0];
+                let abs_ctrl_y = cursor_y + item.args[1];
+                let abs_x = cursor_x + item.args[2];
+                let abs_y = cursor_y + item.args[3];
+                let absolute_args = [abs_ctrl_x, abs_ctrl_y, abs_x, abs_y];
+                if index > 0
+                    && serialized_command_len('Q', &absolute_args, params)
+                        < serialized_command_len('q', &item.args, params)
+                {
+                    item.command = 'Q';
+                    item.args[0] = abs_ctrl_x;
+                    item.args[1] = abs_ctrl_y;
+                    item.args[2] = abs_x;
+                    item.args[3] = abs_y;
+                }
+                cursor_x = abs_x;
+                cursor_y = abs_y;
+            }
             't' => {
-                cursor_x += item.args[0];
-                cursor_y += item.args[1];
+                let abs_x = cursor_x + item.args[0];
+                let abs_y = cursor_y + item.args[1];
+                let absolute_args = [abs_x, abs_y];
+                if index > 0
+                    && serialized_command_len('T', &absolute_args, params)
+                        < serialized_command_len('t', &item.args, params)
+                {
+                    item.command = 'T';
+                    item.args[0] = abs_x;
+                    item.args[1] = abs_y;
+                }
+                cursor_x = abs_x;
+                cursor_y = abs_y;
             }
             'a' => {
                 cursor_x += item.args[5];
@@ -2899,6 +3090,24 @@ fn serialize_path_numbers(
 
 fn has_same_sign(left: f64, right: f64) -> bool {
     is_zero(left) || is_zero(right) || left.is_sign_positive() == right.is_sign_positive()
+}
+
+fn path_item_endpoint(item: &PathItem, cursor_x: f64, cursor_y: f64) -> Option<(f64, f64)> {
+    match item.command {
+        'M' | 'L' | 'T' => Some((item.args[0], item.args[1])),
+        'm' | 'l' | 't' => Some((cursor_x + item.args[0], cursor_y + item.args[1])),
+        'H' => Some((item.args[0], cursor_y)),
+        'h' => Some((cursor_x + item.args[0], cursor_y)),
+        'V' => Some((cursor_x, item.args[0])),
+        'v' => Some((cursor_x, cursor_y + item.args[0])),
+        'C' => Some((item.args[4], item.args[5])),
+        'c' => Some((cursor_x + item.args[4], cursor_y + item.args[5])),
+        'S' | 'Q' => Some((item.args[2], item.args[3])),
+        's' | 'q' => Some((cursor_x + item.args[2], cursor_y + item.args[3])),
+        'A' => Some((item.args[5], item.args[6])),
+        'a' => Some((cursor_x + item.args[5], cursor_y + item.args[6])),
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

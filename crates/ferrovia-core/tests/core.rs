@@ -1126,6 +1126,52 @@ fn convert_path_data_uses_smooth_curve_shorthand_when_first_control_is_current_p
 }
 
 #[test]
+fn convert_path_data_uses_smooth_curve_shorthand_after_reflected_control_point() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M260 131c0-15 12-28 28-28 15 0 27 13 27 28 0 15-12 28-27 28z"/></svg>"#;
+    let config = Config {
+        plugins: vec![PluginSpec::Name("convertPathData".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M260 131c0-15 12-28 28-28 15 0 27 13 27 28s-12 28-27 28z"/></svg>"#
+    );
+}
+
+#[test]
+fn convert_path_data_utilizes_absolute_quadratic_when_shorter() {
+    let svg =
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0q30 0 30-30q-30 0-30 30"/></svg>"#;
+    let config = Config {
+        plugins: vec![PluginSpec::Name("convertPathData".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0q30 0 30-30Q0-30 0 0"/></svg>"#
+    );
+}
+
+#[test]
+fn convert_path_data_drops_redundant_close_segment_before_z() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M135 55h25h-25z"/></svg>"#;
+    let config = Config {
+        plugins: vec![PluginSpec::Name("convertPathData".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M135 55h25z"/></svg>"#
+    );
+}
+
+#[test]
 fn convert_path_data_compacts_repeated_curve_commands_into_single_run() {
     let svg =
         r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0c10 0 20 0 30 0c10 0 20 0 30 0"/></svg>"#;
@@ -1137,7 +1183,7 @@ fn convert_path_data_compacts_repeated_curve_commands_into_single_run() {
     let result = optimize(svg, &config).expect("optimize");
     assert_eq!(
         result.data,
-        r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0c10 0 20 0 30 0 10 0 20 0 30 0"/></svg>"#
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0c10 0 20 0 30 0s20 0 30 0"/></svg>"#
     );
 }
 
