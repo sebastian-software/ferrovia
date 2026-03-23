@@ -113,6 +113,15 @@ Status: Active
     - mixed-content / text / script serialization
     - `convertPathData` and path canonicalization drift
     - transform bake-in and geometry rewrite drift
+- Current state after tightening `cleanupIds` begin-expression rewrites:
+  - `smoke-20`: `0 / 20` mismatches
+  - `sample-100`: `34 / 100` mismatches
+  - closed cause in this slice:
+    - `cleanupIds` now rewrites only the first matching SMIL `begin=` segment for a given renamed ID, which matches SVGO on files such as `animate-elem-61-t.svg`
+  - the high-value remainder is unchanged in shape, but now even narrower:
+    - mixed-content / text / script serialization
+    - `convertPathData` and path canonicalization drift
+    - transform bake-in and geometry rewrite drift
 
 ## Active Cluster Backlog
 1. `smil-reference-preservation`
@@ -122,10 +131,9 @@ Status: Active
      - `repeatBase.repeat(4)` rewritten to `c.repeat(4)`
      - `setFourTarget.click+4s` rewritten to `d.click+4s`
    - Representative files:
-     - `animate-elem-61-t.svg`
      - `animate-elem-77/78-t.svg`
    - Expected owner: `cleanupIds` begin-expression analysis and selective reference rewriting
-   - Status: Highest ROI remaining block
+   - Status: Mostly closed in `sample-100`; remaining tail is no longer the main blocker
 2. `mixed-content-serialization`
    - Symptom: Ferrovia still serializes some `text`/`script`/mixed-content blocks differently from SVGO.
    - Typical diffs:
@@ -137,7 +145,7 @@ Status: Active
      - `animate-script-elem-01-b.svg`
      - `animate-struct-dom-01-b.svg`
    - Expected owner: serializer normalization
-   - Status: Open
+   - Status: Highest ROI remaining block
 3. `path-canonicalization`
    - Symptom: `convertPathData` still chooses different absolute/relative forms or path shorthands than SVGO.
    - Typical diffs:
@@ -179,15 +187,15 @@ Status: Active
   - `remaining-w3c-harness-structure-retained`
 
 ## Next Execution Block
-- Close `smil-reference-preservation` first.
+- Close `mixed-content-serialization` first.
 - Keep scope tight:
-  - only rewrite `begin=` references when the identifier is a real renamable ID target in the same reference graph
-  - preserve SVGO spacing and token boundaries in rewritten `begin=` lists
-  - do not let `cleanupIds` treat arbitrary SMIL timing identifiers as safe rename candidates
+  - stay source-faithful in `<script>` and mixed `text` containers instead of flattening indentation too aggressively
+  - keep inline animate/set children aligned with SVGO’s text-node trimming rules
+  - treat script blocks and event-driven animation fixtures as serializer work first, not as parser or plugin semantics changes
 - Remeasure:
   - `smoke-20`
   - `sample-100`
-- Only after that continue with the broader `mixed-content-serialization` and `path-canonicalization` blocks.
+- Only after that continue with the broader `path-canonicalization` and transform/geometry blocks.
 
 ## Commands
 - Corpus gate:
