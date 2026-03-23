@@ -92,7 +92,9 @@ impl<'a> Parser<'a> {
             }
 
             let text = self.parse_text();
-            if !text.trim().is_empty() {
+            if !text.is_empty()
+                && (!text.trim().is_empty() || should_preserve_whitespace_text(self.doc.node(parent)))
+            {
                 self.doc.append_child(parent, NodeKind::Text(text));
             }
         }
@@ -290,4 +292,11 @@ impl<'a> Parser<'a> {
             message: message.into(),
         }
     }
+}
+
+fn should_preserve_whitespace_text(parent: &crate::ast::Node) -> bool {
+    matches!(
+        &parent.kind,
+        NodeKind::Element(element) if element.name == "a"
+    )
 }

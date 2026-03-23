@@ -3822,6 +3822,7 @@ fn cleanup_inlined_selector_attrs(
 
 fn minify_css_text(doc: &Document, css: &str) -> String {
     let mut rules = parse_css_rules(css);
+    let parsed_rules = !rules.is_empty();
     if !element_has_scripts_in_document(doc) {
         let usage = collect_selector_usage(doc);
         for rule in &mut rules {
@@ -3832,6 +3833,9 @@ fn minify_css_text(doc: &Document, css: &str) -> String {
     }
     if !rules.is_empty() {
         return serialize_css_rules(&rules);
+    }
+    if parsed_rules {
+        return String::new();
     }
     strip_css_whitespace(css)
 }
@@ -3867,6 +3871,38 @@ fn selector_used(selector: &str, usage: &SelectorUsage) -> bool {
     if selector == "*" {
         return true;
     }
+    if selector.contains('[') || selector.contains(':') {
+        return true;
+    }
+
+    let selector_ids = extract_selector_ids(selector);
+    if selector_ids
+        .iter()
+        .any(|id| !usage.ids.contains(id.as_str()))
+    {
+        return false;
+    }
+
+    let selector_classes = extract_selector_classes(selector);
+    if selector_classes
+        .iter()
+        .any(|class_name| !usage.classes.contains(class_name.as_str()))
+    {
+        return false;
+    }
+
+    let selector_tags = extract_selector_tags(selector);
+    if selector_tags
+        .iter()
+        .any(|tag_name| !usage.tags.contains(tag_name.as_str()))
+    {
+        return false;
+    }
+
+    if !selector_ids.is_empty() || !selector_classes.is_empty() || !selector_tags.is_empty() {
+        return true;
+    }
+
     if let Some(id) = selector.strip_prefix('#')
         && is_simple_selector(id)
     {
@@ -3881,6 +3917,43 @@ fn selector_used(selector: &str, usage: &SelectorUsage) -> bool {
         return usage.tags.contains(selector);
     }
     true
+}
+
+fn extract_selector_tags(selector: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let bytes = selector.as_bytes();
+    let mut index = 0;
+
+    while index < bytes.len() {
+        let ch = char::from(bytes[index]);
+        if ch.is_ascii_whitespace() || matches!(ch, '>' | '+' | '~' | ',' | '*' | '.' | '#') {
+            index += 1;
+            continue;
+        }
+
+        if matches!(ch, ':' | '[') {
+            return Vec::new();
+        }
+
+        if ch.is_ascii_alphabetic() {
+            let start = index;
+            index += 1;
+            while index < bytes.len() {
+                let next = char::from(bytes[index]);
+                if next.is_ascii_alphanumeric() || matches!(next, '_' | '-') {
+                    index += 1;
+                } else {
+                    break;
+                }
+            }
+            tokens.push(selector[start..index].to_string());
+            continue;
+        }
+
+        index += 1;
+    }
+
+    tokens
 }
 
 fn element_has_scripts_in_document(doc: &Document) -> bool {
@@ -5134,6 +5207,9 @@ fn set_or_push_attribute(
 
 fn document_has_style_or_scripts(doc: &Document) -> bool {
     doc.nodes.iter().enumerate().skip(1).any(|(node_id, node)| {
+        if doc.node(node_id).parent.is_none() {
+            return false;
+        }
         let NodeKind::Element(element) = &node.kind else {
             return false;
         };
@@ -6161,6 +6237,7 @@ fn cleanup_ids(doc: &mut Document, params: Option<&Value>) {
     let mut node_by_id = HashMap::<String, usize>::new();
     let mut duplicate_nodes = Vec::<usize>::new();
     let mut references_by_id = HashMap::<String, Vec<(usize, String)>>::new();
+    let mut reference_order = Vec::<String>::new();
 
     for node_id in 1..doc.nodes.len() {
         let Some(element) = node_element(doc, node_id) else {
@@ -6180,6 +6257,7 @@ fn cleanup_ids(doc: &mut Document, params: Option<&Value>) {
                 attribute.name.as_str(),
                 attribute.value.as_str(),
                 &mut references_by_id,
+                &mut reference_order,
             );
         }
     }
@@ -6192,8 +6270,7 @@ fn cleanup_ids(doc: &mut Document, params: Option<&Value>) {
     }
 
     let mut current_id = None;
-    let referenced_ids = references_by_id.keys().cloned().collect::<Vec<_>>();
-    for id in referenced_ids {
+    for id in reference_order {
         let Some(node_id) = node_by_id.remove(id.as_str()) else {
             continue;
         };
@@ -6325,6 +6402,7 @@ fn collect_reference_pairs(
     attribute_name: &str,
     value: &str,
     references_by_id: &mut HashMap<String, Vec<(usize, String)>>,
+    reference_order: &mut Vec<String>,
 ) {
     let mut references = HashSet::new();
     collect_references_from_value(value, &mut references);
@@ -6333,8 +6411,11 @@ fn collect_reference_pairs(
     }
     for id in references {
         references_by_id
-            .entry(id)
-            .or_default()
+            .entry(id.clone())
+            .or_insert_with(|| {
+                reference_order.push(id.clone());
+                Vec::new()
+            })
             .push((node_id, attribute_name.to_string()));
     }
 }

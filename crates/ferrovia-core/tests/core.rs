@@ -243,6 +243,35 @@ fn cleanup_ids_rewrites_begin_references() {
 }
 
 #[test]
+fn cleanup_ids_minifies_in_reference_encounter_order() {
+    let svg = concat!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">"#,
+        r#"<path id="fadeIn" d="M0 0"><animate id="fadeInAnim" begin="indefinite"/></path>"#,
+        r#"<path id="fadeOut" d="M1 1"><animate id="fadeOutAnim" begin="indefinite"/></path>"#,
+        r##"<a xlink:href="#fadeInAnim"><text>In</text></a>"##,
+        r##"<a xlink:href="#fadeOutAnim"><text>Out</text></a>"##,
+        r#"</svg>"#
+    );
+    let config = Config {
+        plugins: vec![PluginSpec::Name("cleanupIds".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        concat!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">"#,
+            r#"<path d="M0 0"><animate id="a" begin="indefinite"/></path>"#,
+            r#"<path d="M1 1"><animate id="b" begin="indefinite"/></path>"#,
+            r##"<a xlink:href="#a"><text>In</text></a>"##,
+            r##"<a xlink:href="#b"><text>Out</text></a>"##,
+            r#"</svg>"#
+        )
+    );
+}
+
+#[test]
 fn cleanup_numeric_values_rounds_and_strips_default_px() {
     let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10.1234 20.9876"><rect x="10.5000px" y="2.54cm" width="0.5000" version="1.1"/></svg>"#;
     let config = Config {
@@ -389,6 +418,51 @@ fn preset_default_runs_merge_paths() {
     assert_eq!(
         result.data,
         r#"<svg xmlns="http://www.w3.org/2000/svg"><g fill="red"><path d="M0 0h10M20 0h10"/></g></svg>"#
+    );
+}
+
+#[test]
+fn preset_default_drops_unused_style_scaffold_and_root_defaults() {
+    let svg = concat!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" id="svg-root" width="100%" height="100%" viewBox="0 0 10 10">"#,
+        r#"<defs><style>#test-body-content .final{fill:red}.hideme{display:none}</style></defs>"#,
+        r#"<g id="test-body-content"><text class="hideme">x</text></g></svg>"#,
+    );
+    let config = Config {
+        plugins: vec![PluginSpec::Name("preset-default".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(result.data, r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"/>"#);
+}
+
+#[test]
+fn preset_default_preserves_whitespace_text_nodes_left_by_removed_children() {
+    let svg = concat!(
+        r##"<svg xmlns="http://www.w3.org/2000/svg"><a xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="#x">"##,
+        "\n  ",
+        r#"<path d="M0 0"/>"#,
+        "\n  ",
+        r#"<text>x</text>"#,
+        "\n",
+        r#"</a></svg>"#,
+    );
+    let config = Config {
+        plugins: vec![PluginSpec::Name("preset-default".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        concat!(
+            r##"<svg xmlns="http://www.w3.org/2000/svg"><a xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="#x">"##,
+            "\n  \n  ",
+            r#"<text>x</text>"#,
+            "\n",
+            r#"</a></svg>"#
+        )
     );
 }
 

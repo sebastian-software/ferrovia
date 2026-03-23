@@ -37,6 +37,9 @@ fn serialize_node(doc: &Document, id: NodeId, out: &mut String, options: &Js2Svg
             newline(out, options);
         }
         NodeKind::Text(text) => {
+            if text.trim().is_empty() && !should_preserve_whitespace_text(doc, id) {
+                return;
+            }
             if options.pretty {
                 let trimmed = text.trim();
                 if trimmed.is_empty() {
@@ -64,7 +67,10 @@ fn serialize_node(doc: &Document, id: NodeId, out: &mut String, options: &Js2Svg
                 serialize_attribute(attribute, out);
             }
 
-            let children: Vec<_> = doc.children(id).collect();
+            let children: Vec<_> = doc
+                .children(id)
+                .filter(|child_id| should_serialize_node(doc, *child_id))
+                .collect();
             let has_children = !children.is_empty();
             if !has_children {
                 out.push_str("/>");
@@ -103,6 +109,27 @@ fn serialize_node(doc: &Document, id: NodeId, out: &mut String, options: &Js2Svg
             newline(out, options);
         }
     }
+}
+
+fn should_serialize_node(doc: &Document, id: NodeId) -> bool {
+    match &doc.node(id).kind {
+        NodeKind::Text(text) => !text.trim().is_empty() || should_preserve_whitespace_text(doc, id),
+        _ => true,
+    }
+}
+
+fn should_preserve_whitespace_text(doc: &Document, id: NodeId) -> bool {
+    let Some(parent_id) = doc.node(id).parent else {
+        return false;
+    };
+    if parent_id == doc.root_id() {
+        return false;
+    }
+
+    matches!(
+        &doc.node(parent_id).kind,
+        NodeKind::Element(element) if element.name == "a"
+    )
 }
 
 fn serialize_attribute(attribute: &Attribute, out: &mut String) {
