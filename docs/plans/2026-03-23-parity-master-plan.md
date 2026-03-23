@@ -54,6 +54,11 @@ Status: Active
   - `serializer-quote-normalization`: reduced to `11` in `sample-100`
   - `transform-folding-and-shape-normalization`: still `4` in `sample-100`
   - `unclassified`: still the dominant remainder and the next investigation target
+- Current state after text-node quote/entity escaping:
+  - `smoke-20`: `16 / 20` mismatches
+  - `sample-100`: `79 / 100` mismatches
+  - quote-heavy text serialization cases are reduced again
+  - the remaining dominant work is now clearly outside the simple serializer quote block
 
 ## Active Cluster Backlog
 1. `foreign-descriptive-subtree-retained`
@@ -61,9 +66,9 @@ Status: Active
    - Expected owner: `removeUnknownsAndDefaults`
    - Status: Mostly closed; one remaining `sample-100` occurrence to verify
 2. `serializer-quote-normalization`
-   - Symptom: Ferrovia preserves input single quotes more often than SVGO, which tends to serialize canonical double-quoted attributes.
-   - Expected owner: serializer normalization
-   - Status: In progress; most obvious serializer cases are reduced, but more remain
+    - Symptom: Ferrovia preserves input single quotes more often than SVGO, which tends to serialize canonical double-quoted attributes.
+    - Expected owner: serializer normalization
+   - Status: Mostly closed; remaining corpus deltas are no longer dominated by the simple quote/text escaping cases
 3. `transform-folding-and-shape-normalization`
    - Symptom: Some W3C animation files still differ because SVGO folds transforms or shape geometry further than Ferrovia.
    - Expected owner: geometry / serializer interaction
