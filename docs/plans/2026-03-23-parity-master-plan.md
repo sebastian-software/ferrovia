@@ -161,6 +161,20 @@ Status: Active
     - path canonicalization drift, for example `m95 40 20 20-20 20-20-20z` vs `m95 40 20 20L95 80 75 60z` in `color-prop-03-t.svg`
     - merge-paths / structural grouping drift, for example `coords-trans-01-b.svg`
     - one remaining foreign-description case and one animated gradient/default-style case
+- Current state after smart numeric shortening within the configured precision window:
+  - `smoke-20`: `0 / 20` mismatches
+  - `sample-100`: `22 / 100` mismatches
+  - closed causes in this slice:
+    - number serialization now prefers shorter values whenever the shorter form stays within the active precision tolerance instead of always materializing the full rounded decimal
+    - this closes the simple transform / geometry tail where Ferrovia produced values like `-194.841` or `43.301` while SVGO chose `-194.84` and `43.3`
+  - representative wins:
+    - `animate-elem-24-t.svg`
+    - the numeric-only portion of `coords-trans-07-t.svg`
+  - the remaining wall is now even more concentrated:
+    - transform / shape normalization drift, for example `translate(40)scale(.8)` vs `matrix(.8 0 0 .8 40 0)` in `animate-elem-44-t.svg`
+    - path canonicalization drift, for example the remaining transformed polygon / guide-path cases in `animate-elem-30/36/82-t.svg` and `color-prop-03-t.svg`
+    - merge-paths / structural grouping drift, for example `coords-trans-01-b.svg`
+    - one remaining foreign-description classifier miss and one animated gradient/default-style case
 
 ## Active Cluster Backlog
 1. `smil-reference-preservation`

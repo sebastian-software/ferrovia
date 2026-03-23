@@ -1798,6 +1798,36 @@ fn round_number(value: f64, precision: usize) -> f64 {
     if precision == 0 {
         return value.round();
     }
+
+    let rounded = round_number_to_precision(value, precision);
+    let tolerance = 10_f64.powi(-(precision as i32));
+    let mut best = rounded;
+
+    for shorter_precision in (0..precision).rev() {
+        let candidate = round_number_to_precision(value, shorter_precision);
+        if (value - candidate).abs() <= tolerance {
+            best = candidate;
+        } else {
+            break;
+        }
+    }
+
+    best
+}
+
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Precision is bounded by plugin params and safe in practice"
+)]
+#[expect(
+    clippy::cast_possible_wrap,
+    reason = "Precision is bounded by plugin params and safe in practice"
+)]
+fn round_number_to_precision(value: f64, precision: usize) -> f64 {
+    if precision == 0 {
+        return value.round();
+    }
+
     let factor = 10_f64.powi(precision as i32);
     (value * factor).round() / factor
 }
