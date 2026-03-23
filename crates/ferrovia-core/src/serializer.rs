@@ -133,6 +133,14 @@ fn normalized_text_for_context<'a>(doc: &'a Document, id: NodeId, text: &'a str)
         return Some(Cow::Owned(trimmed.to_string()));
     }
 
+    if should_trim_descriptive_outer_whitespace(doc, id, text) {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        return Some(Cow::Owned(trimmed.to_string()));
+    }
+
     Some(Cow::Borrowed(text))
 }
 
@@ -168,6 +176,22 @@ fn should_trim_script_outer_whitespace(doc: &Document, id: NodeId, text: &str) -
     };
 
     parent.name == "script"
+}
+
+fn should_trim_descriptive_outer_whitespace(doc: &Document, id: NodeId, text: &str) -> bool {
+    if !text.contains(['\n', '\r', '\t']) || text.trim().is_empty() {
+        return false;
+    }
+
+    let Some(parent_id) = doc.node(id).parent else {
+        return false;
+    };
+
+    let NodeKind::Element(parent) = &doc.node(parent_id).kind else {
+        return false;
+    };
+
+    parent.name.starts_with("d:")
 }
 
 fn serialize_attribute(attribute: &Attribute, out: &mut String) {

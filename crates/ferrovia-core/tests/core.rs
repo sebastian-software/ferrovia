@@ -105,6 +105,27 @@ fn serializer_trims_outer_script_indentation_but_keeps_inner_lines() {
 }
 
 #[test]
+fn serializer_trims_outer_whitespace_in_description_namespace_text() {
+    let svg = concat!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg">"#,
+        r#"<d:SVGTestCase xmlns:d="http://www.w3.org/2000/02/svg/testsuite/description/">"#,
+        r#"<d:operatorScript xmlns="http://www.w3.org/1999/xhtml">"#,
+        "\n      Run the test. No interaction required.\n    ",
+        r#"</d:operatorScript></d:SVGTestCase></svg>"#,
+    );
+
+    let result = optimize(svg, &Config::default()).expect("optimize");
+    assert_eq!(
+        result.data,
+        concat!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg"><d:SVGTestCase xmlns:d="http://www.w3.org/2000/02/svg/testsuite/description/"><d:operatorScript xmlns="http://www.w3.org/1999/xhtml">"#,
+            "Run the test. No interaction required.",
+            r#"</d:operatorScript></d:SVGTestCase></svg>"#
+        )
+    );
+}
+
+#[test]
 fn removes_supported_structural_nodes() {
     let svg =
         std::fs::read_to_string(workspace_root().join("tests/fixtures/oracle/remove-comments.svg"))
@@ -1187,6 +1208,21 @@ fn convert_path_data_utilizes_absolute_quadratic_when_shorter() {
 }
 
 #[test]
+fn convert_path_data_utilizes_absolute_cubic_when_shorter() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M15.2 5.4c-9.7 4.7-14.1 13.4-13.2 26.3 14.8 32.1 138.9-59 127.8-19.7-17.7 63.3-87.6-20.8-114.6-6.6"/></svg>"#;
+    let config = Config {
+        plugins: vec![PluginSpec::Name("convertPathData".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M15.2 5.4C5.5 10.1 1.1 18.8 2 31.7c14.8 32.1 138.9-59 127.8-19.7C112.1 75.3 42.2-8.8 15.2 5.4"/></svg>"#
+    );
+}
+
+#[test]
 fn convert_path_data_drops_redundant_close_segment_before_z() {
     let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M135 55h25h-25z"/></svg>"#;
     let config = Config {
@@ -1251,4 +1287,98 @@ fn convert_path_data_compacts_repeated_curve_commands_into_single_run() {
 #[test]
 fn convert_path_data_bakes_affine_transforms_into_non_arc_paths() {
     assert_oracle_fixture("convert-path-data-transform");
+}
+
+#[test]
+fn convert_path_data_scales_stroke_attrs_when_baking_uniform_transform() {
+    let svg = concat!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><path fill="none" stroke="gray" "#,
+        r#"stroke-dasharray="5,5,20" stroke-dashoffset="-50" stroke-width="5" "#,
+        r#"transform="scale(.9)" d="M10 10L50 10L10 40L50 40"/></svg>"#
+    );
+    let config = Config {
+        plugins: vec![PluginSpec::Name("convertPathData".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><path fill="none" stroke="gray" stroke-dasharray="4.5,4.5,18" stroke-dashoffset="-45" stroke-width="4.5" d="M9 9h36L9 36h36"/></svg>"#
+    );
+}
+
+#[test]
+fn preset_default_scales_stroke_attrs_for_transformed_shape_paths() {
+    let svg = concat!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><g transform="scale(.9)"><g>"#,
+        r#"<polyline fill="none" stroke="gray" stroke-dasharray="5,5,20" "#,
+        r#"stroke-dashoffset="-50" stroke-width="5" points="10,10,50,10,10,40,50,40"/>"#,
+        r#"</g></g></svg>"#
+    );
+    let config = Config {
+        plugins: vec![PluginSpec::Name("preset-default".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><path fill="none" stroke="gray" stroke-dasharray="4.5,4.5,18" stroke-dashoffset="-45" stroke-width="4.5" d="M9 9h36L9 36h36"/></svg>"#
+    );
+}
+
+#[test]
+fn convert_path_data_localizes_inherited_stroke_width_when_baking_transform() {
+    let svg = concat!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><g stroke-width="5">"#,
+        r#"<path transform="scale(.9)" d="M10 10L50 10L10 40L50 40"/></g></svg>"#
+    );
+    let config = Config {
+        plugins: vec![PluginSpec::Name("convertPathData".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><g stroke-width="5"><path d="M9 9h36L9 36h36" stroke-width="4.5"/></g></svg>"#
+    );
+}
+
+#[test]
+fn convert_path_data_materializes_scaled_default_stroke_width_for_stroked_path() {
+    let svg = concat!(
+        r##"<svg xmlns="http://www.w3.org/2000/svg"><path stroke="#000" "##,
+        r#"transform="scale(.8)" d="M10 10L50 10L10 40L50 40"/></svg>"#
+    );
+    let config = Config {
+        plugins: vec![PluginSpec::Name("convertPathData".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r##"<svg xmlns="http://www.w3.org/2000/svg"><path stroke="#000" d="M8 8h32L8 32h32" stroke-width=".8"/></svg>"##
+    );
+}
+
+#[test]
+fn convert_path_data_keeps_nonuniform_transform_on_stroked_animated_path() {
+    let svg = concat!(
+        r##"<svg xmlns="http://www.w3.org/2000/svg"><path fill="none" stroke="#00f" "##,
+        r#"stroke-dasharray="5" stroke-width="10" transform="translate(20 10) scale(1 2) rotate(90)" "#,
+        r#"d="M0 0L10 0"><animate attributeName="stroke-dashoffset" from="0" to="100"/></path></svg>"#
+    );
+    let config = Config {
+        plugins: vec![PluginSpec::Name("convertPathData".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r##"<svg xmlns="http://www.w3.org/2000/svg"><path fill="none" stroke="#00f" stroke-dasharray="5" stroke-width="10" transform="translate(20 10) scale(1 2) rotate(90)" d="M0 0h10"><animate attributeName="stroke-dashoffset" from="0" to="100"/></path></svg>"##
+    );
 }

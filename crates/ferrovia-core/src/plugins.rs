@@ -1409,22 +1409,22 @@ fn matrix_to_transform(
 }
 
 fn decompose_axis_aligned_matrix(matrix: &TransformItem) -> Option<Vec<TransformItem>> {
-    let [a, b, c, d, e, f] = matrix_array(matrix);
-    if !is_zero(b) || !is_zero(c) {
+    let [scale_x, shear_y, shear_x, scale_y, translate_x, translate_y] = matrix_array(matrix);
+    if !is_zero(shear_y) || !is_zero(shear_x) {
         return None;
     }
 
     let mut decomposition = Vec::new();
-    if !is_zero(e) || !is_zero(f) {
+    if !is_zero(translate_x) || !is_zero(translate_y) {
         decomposition.push(TransformItem {
             name: "translate",
-            data: vec![e, f],
+            data: vec![translate_x, translate_y],
         });
     }
-    if !is_zero(a - 1.0) || !is_zero(d - 1.0) {
+    if !is_zero(scale_x - 1.0) || !is_zero(scale_y - 1.0) {
         decomposition.push(TransformItem {
             name: "scale",
-            data: vec![a, d],
+            data: vec![scale_x, scale_y],
         });
     }
 
@@ -1984,6 +1984,8 @@ struct PathItem {
 fn convert_path_data(doc: &mut Document, params: Option<&Value>) {
     let params = convert_path_data_params(params);
     let marker_mid_rules = collect_marker_mid_rules(doc);
+    let stylesheet = collect_semantic_stylesheet(doc);
+    let mut computed_styles = HashMap::new();
 
     for node_id in 1..doc.nodes.len() {
         let Some(element) = node_element(doc, node_id) else {
@@ -2008,9 +2010,29 @@ fn convert_path_data(doc: &mut Document, params: Option<&Value>) {
             continue;
         }
 
-        let baked_transform = transform_value
-            .as_deref()
-            .is_some_and(|transform| bake_affine_transform_into_path_items(&mut items, transform));
+        let baked_transform = transform_value.as_deref().and_then(|transform| {
+            let matrix = affine_bake_matrix_for_path(items.as_slice(), transform)?;
+            if should_skip_nonuniform_path_bake(
+                doc,
+                node_id,
+                matrix,
+                &stylesheet,
+                &mut computed_styles,
+            ) {
+                return None;
+            }
+            apply_affine_bake_to_path_items(&mut items, matrix).then_some(matrix)
+        });
+        let inherited_scaled_stroke_width = baked_transform.and_then(|matrix| {
+            inherited_scaled_stroke_width(
+                doc,
+                node_id,
+                matrix,
+                params.float_precision,
+                &stylesheet,
+                &mut computed_styles,
+            )
+        });
 
         convert_path_to_relative(&mut items);
         convert_curve_shorthands(&mut items);
@@ -2034,7 +2056,23 @@ fn convert_path_data(doc: &mut Document, params: Option<&Value>) {
         if let Some(attribute) = attribute_named_mut(element.attributes.as_mut_slice(), "d") {
             attribute.value = serialize_path_items(&items, params, !has_marker_mid);
         }
-        if baked_transform {
+        if let Some(matrix) = baked_transform {
+            scale_stroke_attrs_for_baked_path_transform(
+                &mut element.attributes,
+                matrix,
+                params.float_precision,
+            );
+            if let Some(stroke_width) = inherited_scaled_stroke_width
+                && !has_local_style_property(element.attributes.as_slice(), "stroke-width")
+                && attribute_value(element.attributes.as_slice(), "stroke-width").is_none()
+            {
+                set_or_push_attribute(
+                    &mut element.attributes,
+                    "stroke-width",
+                    stroke_width.as_str(),
+                    QuoteStyle::Double,
+                );
+            }
             element.attributes.retain(|attribute| attribute.name != "transform");
         }
     }
@@ -2096,24 +2134,226 @@ fn parse_path_items(value: &str) -> std::result::Result<Vec<PathItem>, String> {
     parse_path_commands(value).map(|commands| commands.into_iter().map(PathItem::from).collect())
 }
 
-fn bake_affine_transform_into_path_items(items: &mut [PathItem], transform: &str) -> bool {
+fn affine_bake_matrix_for_path(items: &[PathItem], transform: &str) -> Option<[f64; 6]> {
     if items
         .iter()
         .any(|item| matches!(item.command, 'A' | 'a'))
     {
-        return false;
+        return None;
     }
 
     let Ok(transforms) = parse_transform_items(transform) else {
-        return false;
+        return None;
     };
     if transforms.is_empty() {
+        return None;
+    }
+
+    Some(transform_to_matrix(&transforms_multiply(&transforms)))
+}
+
+fn apply_affine_bake_to_path_items(items: &mut [PathItem], matrix: [f64; 6]) -> bool {
+    absolutize_path_items(items);
+    apply_affine_transform_to_path_items(items, matrix)
+}
+
+fn should_skip_nonuniform_path_bake(
+    doc: &Document,
+    node_id: usize,
+    matrix: [f64; 6],
+    stylesheet: &[StylesheetRule],
+    cache: &mut HashMap<usize, HashMap<String, String>>,
+) -> bool {
+    if uniform_affine_scale(matrix).is_some() {
         return false;
     }
 
-    absolutize_path_items(items);
-    let matrix = transform_to_matrix(&transforms_multiply(&transforms));
-    apply_affine_transform_to_path_items(items, matrix)
+    let has_animation_children = doc.children(node_id).any(|child_id| {
+        matches!(
+            node_element_name(doc, child_id),
+            Some(
+                "animate"
+                    | "animateColor"
+                    | "animateMotion"
+                    | "animateTransform"
+                    | "set"
+            )
+        )
+    });
+    if has_animation_children {
+        return true;
+    }
+
+    let style = compute_static_style(doc, node_id, stylesheet, cache);
+    style.get("stroke").is_some_and(|stroke| stroke != "none")
+        || style.contains_key("stroke-width")
+        || style.contains_key("stroke-dasharray")
+        || style.contains_key("stroke-dashoffset")
+}
+
+fn scale_stroke_attrs_for_baked_path_transform(
+    attributes: &mut Vec<Attribute>,
+    matrix: [f64; 6],
+    precision: usize,
+) {
+    let Some(scale) = uniform_affine_scale(matrix) else {
+        return;
+    };
+    if is_zero(scale - 1.0) || has_non_scaling_stroke(attributes.as_slice()) {
+        return;
+    }
+
+    scale_numeric_attribute(attributes, "stroke-width", scale, precision);
+    scale_numeric_attribute(attributes, "stroke-dashoffset", scale, precision);
+    scale_dasharray_attribute(attributes, scale, precision);
+    scale_inline_stroke_style(attributes, scale, precision);
+}
+
+fn uniform_affine_scale(matrix: [f64; 6]) -> Option<f64> {
+    let [a, b, c, d, _, _] = matrix;
+    let x_scale = a.hypot(b);
+    let y_scale = c.hypot(d);
+    if is_zero(x_scale) || is_zero(y_scale) {
+        return None;
+    }
+
+    let dot = a.mul_add(c, b * d);
+    let tolerance = x_scale.max(y_scale).max(1.0) * 1e-9;
+    if dot.abs() > tolerance || (x_scale - y_scale).abs() > tolerance {
+        return None;
+    }
+
+    Some(f64::midpoint(x_scale, y_scale))
+}
+
+fn has_non_scaling_stroke(attributes: &[Attribute]) -> bool {
+    if attribute_value(attributes, "vector-effect") == Some("non-scaling-stroke") {
+        return true;
+    }
+    attribute_value(attributes, "style")
+        .map(parse_style_declarations)
+        .is_some_and(|declarations| {
+            declarations.iter().any(|declaration| {
+                declaration.name == "vector-effect" && declaration.value == "non-scaling-stroke"
+            })
+        })
+}
+
+fn scale_numeric_attribute(
+    attributes: &mut Vec<Attribute>,
+    name: &str,
+    scale: f64,
+    precision: usize,
+) {
+    let Some(attribute) = attribute_named_mut(attributes.as_mut_slice(), name) else {
+        return;
+    };
+    let Some(value) = parse_plain_number(attribute.value.trim()) else {
+        return;
+    };
+    attribute.value = serialize_scaled_number(value, scale, precision);
+}
+
+fn scale_dasharray_attribute(attributes: &mut Vec<Attribute>, scale: f64, precision: usize) {
+    let Some(attribute) = attribute_named_mut(attributes.as_mut_slice(), "stroke-dasharray") else {
+        return;
+    };
+    let Some(scaled) = scale_dasharray_value(attribute.value.as_str(), scale, precision) else {
+        return;
+    };
+    attribute.value = scaled;
+}
+
+fn scale_inline_stroke_style(attributes: &mut Vec<Attribute>, scale: f64, precision: usize) {
+    let Some(style_value) = attribute_value(attributes.as_slice(), "style") else {
+        return;
+    };
+    let mut declarations = parse_style_declarations(style_value);
+    let mut changed = false;
+    for declaration in &mut declarations {
+        match declaration.name.as_str() {
+            "stroke-width" | "stroke-dashoffset" => {
+                let Some(value) = parse_plain_number(declaration.value.trim()) else {
+                    continue;
+                };
+                declaration.value = serialize_scaled_number(value, scale, precision);
+                changed = true;
+            }
+            "stroke-dasharray" => {
+                let Some(scaled) =
+                    scale_dasharray_value(declaration.value.as_str(), scale, precision)
+                else {
+                    continue;
+                };
+                declaration.value = scaled;
+                changed = true;
+            }
+            _ => {}
+        }
+    }
+    if changed {
+        update_style_attribute(attributes, &declarations);
+    }
+}
+
+fn scale_dasharray_value(value: &str, scale: f64, precision: usize) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.eq_ignore_ascii_case("none") {
+        return None;
+    }
+    if !trimmed.chars().all(|char| {
+        char.is_ascii_digit()
+            || matches!(char, '+' | '-' | '.' | ',' | ' ' | '\n' | '\r' | '\t' | 'e' | 'E')
+    }) {
+        return None;
+    }
+    let numbers = extract_number_list(trimmed);
+    if numbers.is_empty() {
+        return None;
+    }
+
+    Some(
+        numbers
+            .into_iter()
+            .map(|number| serialize_scaled_number(number, scale, precision))
+            .collect::<Vec<_>>()
+            .join(","),
+    )
+}
+
+fn serialize_scaled_number(value: f64, scale: f64, precision: usize) -> String {
+    remove_leading_zero(round_number(value * scale, precision))
+}
+
+fn inherited_scaled_stroke_width(
+    doc: &Document,
+    node_id: usize,
+    matrix: [f64; 6],
+    precision: usize,
+    stylesheet: &[StylesheetRule],
+    cache: &mut HashMap<usize, HashMap<String, String>>,
+) -> Option<String> {
+    let scale = uniform_affine_scale(matrix)?;
+    if is_zero(scale - 1.0) {
+        return None;
+    }
+
+    let style = compute_static_style(doc, node_id, stylesheet, cache);
+    let value = style
+        .get("stroke-width")
+        .and_then(|stroke_width| parse_plain_number(stroke_width.trim()))
+        .or_else(|| {
+            style.get("stroke")
+                .is_some_and(|stroke| stroke != "none")
+                .then_some(1.0)
+        })?;
+    Some(serialize_scaled_number(value, scale, precision))
+}
+
+fn has_local_style_property(attributes: &[Attribute], name: &str) -> bool {
+    attribute_value(attributes, "style")
+        .map(parse_style_declarations)
+        .is_some_and(|declarations| declarations.iter().any(|declaration| declaration.name == name))
 }
 
 impl From<PathCommand> for PathItem {
@@ -2906,12 +3146,50 @@ fn utilize_absolute_path_items(items: &mut [PathItem], params: ConvertPathDataPa
                 cursor_y = abs_y;
             }
             'c' => {
-                cursor_x += item.args[4];
-                cursor_y += item.args[5];
+                if item.args.len() != 6 {
+                    cursor_x += *item.args.get(4).unwrap_or(&0.0);
+                    cursor_y += *item.args.get(5).unwrap_or(&0.0);
+                    continue;
+                }
+                let absolute_args = [
+                    cursor_x + item.args[0],
+                    cursor_y + item.args[1],
+                    cursor_x + item.args[2],
+                    cursor_y + item.args[3],
+                    cursor_x + item.args[4],
+                    cursor_y + item.args[5],
+                ];
+                if index > 0
+                    && serialized_command_len('C', &absolute_args, params)
+                        < serialized_command_len('c', &item.args, params)
+                {
+                    item.command = 'C';
+                    item.args = absolute_args.to_vec();
+                }
+                cursor_x = absolute_args[4];
+                cursor_y = absolute_args[5];
             }
             's' => {
-                cursor_x += item.args[2];
-                cursor_y += item.args[3];
+                if item.args.len() != 4 {
+                    cursor_x += *item.args.get(2).unwrap_or(&0.0);
+                    cursor_y += *item.args.get(3).unwrap_or(&0.0);
+                    continue;
+                }
+                let absolute_args = [
+                    cursor_x + item.args[0],
+                    cursor_y + item.args[1],
+                    cursor_x + item.args[2],
+                    cursor_y + item.args[3],
+                ];
+                if index > 0
+                    && serialized_command_len('S', &absolute_args, params)
+                        < serialized_command_len('s', &item.args, params)
+                {
+                    item.command = 'S';
+                    item.args = absolute_args.to_vec();
+                }
+                cursor_x = absolute_args[2];
+                cursor_y = absolute_args[3];
             }
             'q' => {
                 let abs_ctrl_x = cursor_x + item.args[0];

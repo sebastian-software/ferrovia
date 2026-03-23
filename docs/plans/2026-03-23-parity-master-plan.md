@@ -185,6 +185,22 @@ Status: Active
     - the isolated `matrix(.8 0 0 .8 40 0)` regression path now rewrites to `translate(40)scale(.8)`
   - important note:
     - this did not reduce the global `sample-100` count by itself because files like `animate-elem-44-t.svg` still have additional downstream path-grouping and canonicalization diffs in the same document
+- Current state after non-uniform path-bake deopts, description-text trimming, and cubic absolute-path tie-breaks:
+  - `smoke-20`: `0 / 20` mismatches
+  - `sample-100`: `20 / 100` mismatches
+  - closed causes in this slice:
+    - `convertPathData` now keeps non-uniform transforms on stroked animated paths instead of baking them into raw geometry, which removes the false-positive transform rewrite drift on W3C stroke-animation cases
+    - descriptive XHTML text under `d:*` test metadata is now trimmed to SVGO-like outer whitespace without flattening mixed SVG text containers globally
+    - `convertPathData` now chooses absolute cubic commands when they serialize shorter than the relative form, which closes another W3C path-canonicalization tie-break family
+  - representative wins:
+    - `animate-elem-35-t.svg`
+    - the transform-gating part of `animate-elem-82-t.svg`
+    - additional cubic-command parity inside the remaining W3C animation corpus
+  - the remaining wall is now concentrated even more narrowly:
+    - numeric path-coordinate tie-breaks such as `27.717` vs `27.716` and `21.214` vs `21.213`
+    - zero-length and subpath-canonicalization drift in animated shape fixtures such as `animate-elem-32-t.svg`
+    - conservative path merging / grouping in files such as `animate-elem-34-t.svg`, `animate-elem-44-t.svg`, and `coords-trans-01-b.svg`
+    - a small residual gradient/default-style case and a few geometry normalization outliers
 
 ## Active Cluster Backlog
 1. `smil-reference-preservation`
@@ -217,23 +233,24 @@ Status: Active
     - different command grouping or shape-to-path output forms
     - relative line runs converted to absolute `L` even when SVGO keeps the compact relative form
   - Representative files:
+    - `animate-elem-30/32/36/82-t.svg`
     - `color-prop-03-t.svg`
     - `conform-viewers-01-t.svg`
   - Expected owner: `convertPathData`, shape conversion, and path serializer interaction
-  - Status: Partially closed; remaining tail now overlaps more with transform/shape rewriting than with simple shorthand selection
+  - Status: Partially closed; remaining tail is now mostly numeric tie-breaks, zero-length draw canonicalization, and a few command-form decisions
 4. `transform-and-geometry-rewrite`
   - Symptom: Ferrovia bakes transforms or rewrites geometry in places where SVGO leaves the structural transform/shape form intact.
-  - Representative files:
-     - `animate-elem-24-t.svg`
-     - `coords-trans-07-t.svg`
+   - Representative files:
+     - `animate-elem-34/44-t.svg`
+     - `coords-trans-01/07-t.svg`
    - Expected owner: transform gating and geometry normalization
-   - Status: Open and now one of the highest-ROI remaining causes
+   - Status: Open, but now smaller; the next wins likely come from shape/group merge behavior rather than more global transform decomposition work
 5. `foreign-descriptive-subtree-retained`
   - Symptom: One remaining foreign-description case still retains XHTML child content that SVGO strips.
   - Representative file:
      - `animate-elem-82-t.svg`
-   - Expected owner: `removeUnknownsAndDefaults`
-   - Status: Nearly closed; one known `sample-100` occurrence
+  - Expected owner: `removeUnknownsAndDefaults`
+  - Status: functionally closed as a subtree-retention bug; the remaining classifier hit is now just a path-numeric delta in the same file
 6. `animated-gradient-defaults`
    - Symptom: Ferrovia still drops animated inherited/default presentation values on gradient wrapper groups that SVGO keeps.
    - Representative file:
@@ -258,6 +275,11 @@ Status: Active
   - `remaining-w3c-harness-structure-retained`
 
 ## Next Execution Block
+- Tighten zero-length subpath handling so `h0` / `v0` is only preserved when it is truly the only draw command in the subpath.
+- Re-measure `sample-100` and check whether that closes `animate-elem-32-t.svg` and related animation fixtures.
+- After that, choose between:
+  - numeric path-coordinate tie-break work (`animate-elem-30/82-t.svg`, `coords-trans-07-t.svg`)
+  - conservative merge/group work (`animate-elem-34/44-t.svg`, `coords-trans-01-b.svg`)
 - Continue the remaining `path-canonicalization` tail only where the diff is still command-form driven.
 - Keep scope tight:
   - continue on corpus-proven `convertPathData` drift only where it is still about command-form parity
