@@ -3542,13 +3542,14 @@ fn merge_paths(doc: &mut Document, params: Option<&Value>) {
                 continue;
             }
 
-            let Some(current_path_data) = parse_node_path_data(doc, child_id) else {
+            let Some(mut current_path_data) = parse_node_path_data(doc, child_id) else {
                 if let Some(data) = prev_path_data.take() {
                     write_merged_path_data(doc, prev_child, &data, params);
                 }
                 prev_child = child_id;
                 continue;
             };
+            normalize_appended_path_items_for_merge(&mut current_path_data);
 
             if prev_path_data.is_none() {
                 prev_path_data = parse_node_path_data(doc, prev_child);
@@ -3669,6 +3670,18 @@ fn write_merged_path_data(
         return;
     };
     set_or_push_attribute(&mut element.attributes, "d", serialized.as_str(), quote);
+}
+
+#[expect(
+    clippy::missing_const_for_fn,
+    reason = "The helper mutates a borrowed slice of path items; const adds no practical value here"
+)]
+fn normalize_appended_path_items_for_merge(items: &mut [PathItem]) {
+    if let Some(first) = items.first_mut()
+        && first.command == 'm'
+    {
+        first.command = 'M';
+    }
 }
 
 fn paths_intersect(left: &[PathItem], right: &[PathItem]) -> bool {

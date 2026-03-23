@@ -375,6 +375,30 @@ fn matches_svgo_oracle_for_merge_paths_force() {
 }
 
 #[test]
+fn merge_paths_absolutizes_leading_relative_moveto_of_appended_path() {
+    let svg = concat!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg">"#,
+        r#"<path d="M0 0h10z"/>"#,
+        r#"<path d="m20 0h10z"/>"#,
+        r#"</svg>"#,
+    );
+    let config = Config {
+        plugins: vec![PluginSpec::Name("mergePaths".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        concat!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg">"#,
+            r#"<path d="M0 0h10zM20 0h10z"/>"#,
+            r#"</svg>"#,
+        )
+    );
+}
+
+#[test]
 fn inline_styles_leaves_multi_match_selector_by_default() {
     let svg = concat!(
         r#"<svg xmlns="http://www.w3.org/2000/svg"><style>.hero{fill:red}</style>"#,
