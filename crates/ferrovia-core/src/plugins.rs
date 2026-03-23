@@ -5500,6 +5500,8 @@ fn is_inheritable_attr(name: &str) -> bool {
             | "paint-order"
             | "pointer-events"
             | "shape-rendering"
+            | "stop-color"
+            | "stop-opacity"
             | "stroke-dasharray"
             | "stroke-dashoffset"
             | "stroke-linecap"
@@ -5592,6 +5594,32 @@ fn is_core_attr(name: &str) -> bool {
 
 fn is_conditional_processing_attr(name: &str) -> bool {
     matches!(name, "requiredExtensions" | "requiredFeatures" | "systemLanguage")
+}
+
+fn is_animation_addition_attr(name: &str) -> bool {
+    matches!(name, "additive" | "accumulate")
+}
+
+fn is_animation_attribute_target_attr(name: &str) -> bool {
+    matches!(name, "attributeType" | "attributeName")
+}
+
+fn is_animation_event_attr(name: &str) -> bool {
+    matches!(name, "onbegin" | "onend" | "onrepeat" | "onload")
+}
+
+fn is_animation_timing_attr(name: &str) -> bool {
+    matches!(
+        name,
+        "begin" | "dur" | "end" | "fill" | "max" | "min" | "repeatCount" | "repeatDur" | "restart"
+    )
+}
+
+fn is_animation_value_attr(name: &str) -> bool {
+    matches!(
+        name,
+        "by" | "calcMode" | "from" | "keySplines" | "keyTimes" | "to" | "values"
+    )
 }
 
 fn is_graphical_event_attr(name: &str) -> bool {
@@ -5920,7 +5948,11 @@ fn should_remove_unknown_child(doc: &Document, parent_id: usize, child_name: &st
 fn has_attribute_model(name: &str) -> bool {
     matches!(
         name,
-        "svg"
+        "animate"
+            | "animateColor"
+            | "animateMotion"
+            | "animateTransform"
+            | "svg"
             | "g"
             | "rect"
             | "path"
@@ -5945,6 +5977,7 @@ fn has_attribute_model(name: &str) -> bool {
             | "stop"
             | "clipPath"
             | "filter"
+            | "set"
     )
 }
 
@@ -5958,6 +5991,54 @@ fn element_allows_presentation(name: &str) -> bool {
 )]
 fn attribute_allowed_on_element(element_name: &str, attr_name: &str) -> bool {
     if is_core_attr(attr_name) {
+        return true;
+    }
+    if matches!(element_name, "animate" | "animateColor")
+        && (is_animation_addition_attr(attr_name)
+            || is_animation_attribute_target_attr(attr_name)
+            || is_animation_event_attr(attr_name)
+            || is_animation_timing_attr(attr_name)
+            || is_animation_value_attr(attr_name)
+            || is_conditional_processing_attr(attr_name)
+            || is_presentation_attr(attr_name)
+            || is_xlink_attr(attr_name)
+            || attr_name == "externalResourcesRequired")
+    {
+        return true;
+    }
+    if element_name == "animateMotion"
+        && (is_animation_addition_attr(attr_name)
+            || is_animation_event_attr(attr_name)
+            || is_animation_timing_attr(attr_name)
+            || is_animation_value_attr(attr_name)
+            || is_conditional_processing_attr(attr_name)
+            || is_xlink_attr(attr_name)
+            || matches!(
+                attr_name,
+                "externalResourcesRequired" | "keyPoints" | "origin" | "path" | "rotate"
+            ))
+    {
+        return true;
+    }
+    if element_name == "animateTransform"
+        && (is_animation_addition_attr(attr_name)
+            || is_animation_attribute_target_attr(attr_name)
+            || is_animation_event_attr(attr_name)
+            || is_animation_timing_attr(attr_name)
+            || is_animation_value_attr(attr_name)
+            || is_conditional_processing_attr(attr_name)
+            || is_xlink_attr(attr_name)
+            || matches!(attr_name, "externalResourcesRequired" | "type"))
+    {
+        return true;
+    }
+    if element_name == "set"
+        && (is_animation_attribute_target_attr(attr_name)
+            || is_animation_timing_attr(attr_name)
+            || is_conditional_processing_attr(attr_name)
+            || is_xlink_attr(attr_name)
+            || matches!(attr_name, "externalResourcesRequired" | "to"))
+    {
         return true;
     }
     if is_presentation_attr(attr_name) && element_allows_presentation(element_name) {
@@ -6249,6 +6330,9 @@ fn attribute_default_value(element_name: &str, attr_name: &str) -> Option<&'stat
         return presentation_default_value(attr_name);
     }
     match (element_name, attr_name) {
+        ("animateMotion", "rotate") => Some("0"),
+        ("image", "x") => Some("0"),
+        ("image", "y") => Some("0"),
         ("style", "type") => Some("text/css"),
         ("svg", "x") => Some("0"),
         ("svg", "y") => Some("0"),
@@ -6264,6 +6348,8 @@ fn attribute_default_value(element_name: &str, attr_name: &str) -> Option<&'stat
         ("rect", "y") => Some("0"),
         ("text", "x") => Some("0"),
         ("text", "y") => Some("0"),
+        ("use", "x") => Some("0"),
+        ("use", "y") => Some("0"),
         _ => None,
     }
 }

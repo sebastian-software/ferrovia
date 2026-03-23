@@ -160,6 +160,74 @@ fn matches_svgo_oracle_for_remove_unknowns_and_defaults_foreign_description() {
 }
 
 #[test]
+fn remove_unknowns_and_defaults_removes_default_zero_coordinates_on_use_and_image() {
+    let svg = concat!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">"#,
+        r##"<use xlink:href="#shape" x="0" y="0"/>"##,
+        r#"<image xlink:href="img.png" x="0" y="0" width="10" height="10"/>"#,
+        r#"</svg>"#,
+    );
+    let config = Config {
+        plugins: vec![PluginSpec::Name("removeUnknownsAndDefaults".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        concat!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">"#,
+            r##"<use xlink:href="#shape"/>"##,
+            r#"<image xlink:href="img.png" width="10" height="10"/>"#,
+            r#"</svg>"#,
+        )
+    );
+}
+
+#[test]
+fn remove_unknowns_and_defaults_drops_inherited_stop_presentation_values() {
+    let svg = concat!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg">"#,
+        r#"<linearGradient stop-color="inherit" stop-opacity="inherit">"#,
+        r#"<stop offset="1" stop-color="inherit" stop-opacity="inherit"/>"#,
+        r#"</linearGradient></svg>"#,
+    );
+    let config = Config {
+        plugins: vec![PluginSpec::Name("removeUnknownsAndDefaults".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        concat!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg">"#,
+            r#"<linearGradient stop-color="inherit" stop-opacity="inherit"><stop offset="1"/></linearGradient>"#,
+            r#"</svg>"#,
+        )
+    );
+}
+
+#[test]
+fn remove_unknowns_and_defaults_strips_unknown_set_event_attrs() {
+    let svg = concat!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg">"#,
+        r#"<set attributeName="visibility" to="hidden" dur="1s" onend="g()"/>"#,
+        r#"</svg>"#,
+    );
+    let config = Config {
+        plugins: vec![PluginSpec::Name("removeUnknownsAndDefaults".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><set attributeName="visibility" to="hidden" dur="1s"/></svg>"#
+    );
+}
+
+#[test]
 fn matches_svgo_oracle_for_merge_styles() {
     assert_oracle_fixture("merge-styles");
 }
