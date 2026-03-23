@@ -125,7 +125,7 @@ fn normalized_text_for_context<'a>(doc: &'a Document, id: NodeId, text: &'a str)
         return None;
     }
 
-    if should_trim_mixed_text_indentation(doc, id, text) {
+    if should_trim_script_outer_whitespace(doc, id, text) {
         let trimmed = text.trim();
         if trimmed.is_empty() {
             return None;
@@ -150,7 +150,7 @@ fn should_preserve_whitespace_text(doc: &Document, id: NodeId) -> bool {
     )
 }
 
-fn should_trim_mixed_text_indentation(doc: &Document, id: NodeId, text: &str) -> bool {
+fn should_trim_script_outer_whitespace(doc: &Document, id: NodeId, text: &str) -> bool {
     if !text.contains(['\n', '\r', '\t']) || text.trim().is_empty() {
         return false;
     }
@@ -163,16 +163,7 @@ fn should_trim_mixed_text_indentation(doc: &Document, id: NodeId, text: &str) ->
         return false;
     };
 
-    if !matches!(
-        parent.name.as_str(),
-        "text" | "tspan" | "textPath" | "altGlyph" | "tref"
-    ) {
-        return false;
-    }
-
-    doc.children(parent_id).any(|child_id| {
-        child_id != id && matches!(doc.node(child_id).kind, NodeKind::Element(_))
-    })
+    parent.name == "script"
 }
 
 fn serialize_attribute(attribute: &Attribute, out: &mut String) {

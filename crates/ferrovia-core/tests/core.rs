@@ -52,7 +52,7 @@ fn serializer_escapes_quotes_and_markup_inside_text_nodes() {
 }
 
 #[test]
-fn serializer_trims_indentation_around_mixed_text_children() {
+fn serializer_preserves_mixed_text_indentation_around_children() {
     let svg = concat!(
         r#"<svg xmlns="http://www.w3.org/2000/svg"><text x="0" y="0">"#,
         "\n  Hello\n  ",
@@ -62,7 +62,30 @@ fn serializer_trims_indentation_around_mixed_text_children() {
     let result = optimize(svg, &Config::default()).expect("optimize");
     assert_eq!(
         result.data,
-        r#"<svg xmlns="http://www.w3.org/2000/svg"><text x="0" y="0">Hello<set attributeName="fill" to="red"/></text></svg>"#
+        concat!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg"><text x="0" y="0">"#,
+            "\n  Hello\n  ",
+            r#"<set attributeName="fill" to="red"/>"#,
+            r#"</text></svg>"#,
+        )
+    );
+}
+
+#[test]
+fn serializer_trims_outer_script_indentation_but_keeps_inner_lines() {
+    let svg = concat!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><script>"#,
+        "\n  function f() {\n    return 1;\n  }\n",
+        r#"</script></svg>"#,
+    );
+    let result = optimize(svg, &Config::default()).expect("optimize");
+    assert_eq!(
+        result.data,
+        concat!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg"><script>"#,
+            "function f() {\n    return 1;\n  }",
+            r#"</script></svg>"#,
+        )
     );
 }
 
