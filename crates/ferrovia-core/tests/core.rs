@@ -42,6 +42,16 @@ fn serializer_escapes_double_quotes_inside_attribute_values() {
 }
 
 #[test]
+fn serializer_escapes_quotes_and_markup_inside_text_nodes() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><text>fill="remove" and rotate='auto' &amp; &lt;tag&gt;</text></svg>"#;
+    let result = optimize(svg, &Config::default()).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><text>fill=&quot;remove&quot; and rotate=&apos;auto&apos; &amp; &lt;tag&gt;</text></svg>"#
+    );
+}
+
+#[test]
 fn removes_supported_structural_nodes() {
     let svg =
         std::fs::read_to_string(workspace_root().join("tests/fixtures/oracle/remove-comments.svg"))

@@ -43,10 +43,10 @@ fn serialize_node(doc: &Document, id: NodeId, out: &mut String, options: &Js2Svg
                     return;
                 }
                 indent(out, options, depth);
-                out.push_str(trimmed);
+                out.push_str(&escape_text(trimmed));
                 newline(out, options);
             } else {
-                out.push_str(text);
+                out.push_str(&escape_text(text));
             }
         }
         NodeKind::Cdata(data) => {
@@ -112,6 +112,49 @@ fn serialize_attribute(attribute: &Attribute, out: &mut String) {
     out.push('"');
     out.push_str(&attribute.value.replace('"', "&quot;"));
     out.push('"');
+}
+
+fn escape_text(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    let bytes = value.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'&'
+            && let Some(end) = value[index + 1..].find(';')
+        {
+            let candidate = &value[index + 1..index + 1 + end];
+            if is_entity_reference(candidate) {
+                escaped.push_str(&value[index..=index + end + 1]);
+                index += end + 2;
+                continue;
+            }
+        }
+
+        let ch = value[index..].chars().next().expect("char boundary");
+        match ch {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '"' => escaped.push_str("&quot;"),
+            '\'' => escaped.push_str("&apos;"),
+            _ => escaped.push(ch),
+        }
+        index += ch.len_utf8();
+    }
+    escaped
+}
+
+fn is_entity_reference(value: &str) -> bool {
+    if value.is_empty() {
+        return false;
+    }
+    if let Some(rest) = value.strip_prefix("#x").or_else(|| value.strip_prefix("#X")) {
+        return !rest.is_empty() && rest.chars().all(|ch| ch.is_ascii_hexdigit());
+    }
+    if let Some(rest) = value.strip_prefix('#') {
+        return !rest.is_empty() && rest.chars().all(|ch| ch.is_ascii_digit());
+    }
+    value.chars().all(|ch| ch.is_ascii_alphanumeric())
 }
 
 fn indent(out: &mut String, options: &Js2Svg, depth: usize) {
