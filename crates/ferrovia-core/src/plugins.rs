@@ -1927,13 +1927,13 @@ fn convert_path_data(doc: &mut Document, params: Option<&Value>) {
     let marker_mid_rules = collect_marker_mid_rules(doc);
 
     for node_id in 1..doc.nodes.len() {
-        let has_marker_mid = path_has_marker_mid(doc, node_id, &marker_mid_rules);
-        let NodeKind::Element(element) = &mut doc.node_mut(node_id).kind else {
+        let Some(element) = node_element(doc, node_id) else {
             continue;
         };
         if element.name != "path" {
             continue;
         }
+        let has_marker_mid = path_has_marker_mid(doc, node_id, &marker_mid_rules);
         let Some(d_value) =
             attribute_value(element.attributes.as_slice(), "d").map(ToOwned::to_owned)
         else {
@@ -1955,6 +1955,7 @@ fn convert_path_data(doc: &mut Document, params: Option<&Value>) {
 
         convert_path_to_relative(&mut items);
         convert_curve_shorthands(&mut items);
+        convert_degenerate_curves_to_lines(&mut items);
         if params.line_shorthands {
             convert_line_shorthands(&mut items);
         }
@@ -1968,6 +1969,9 @@ fn convert_path_data(doc: &mut Document, params: Option<&Value>) {
             utilize_absolute_path_items(&mut items, params);
         }
 
+        let NodeKind::Element(element) = &mut doc.node_mut(node_id).kind else {
+            continue;
+        };
         if let Some(attribute) = attribute_named_mut(element.attributes.as_mut_slice(), "d") {
             attribute.value = serialize_path_items(&items, params, !has_marker_mid);
         }
@@ -2468,6 +2472,30 @@ fn convert_line_shorthands(items: &mut [PathItem]) {
     }
 }
 
+fn convert_degenerate_curves_to_lines(items: &mut [PathItem]) {
+    for item in items {
+        match item.command {
+            'c' if is_zero(item.args[1]) && is_zero(item.args[3]) && is_zero(item.args[5]) => {
+                item.command = 'h';
+                item.args = vec![item.args[4]];
+            }
+            'c' if is_zero(item.args[0]) && is_zero(item.args[2]) && is_zero(item.args[4]) => {
+                item.command = 'v';
+                item.args = vec![item.args[5]];
+            }
+            'q' if is_zero(item.args[1]) && is_zero(item.args[3]) => {
+                item.command = 'h';
+                item.args = vec![item.args[2]];
+            }
+            'q' if is_zero(item.args[0]) && is_zero(item.args[2]) => {
+                item.command = 'v';
+                item.args = vec![item.args[3]];
+            }
+            _ => {}
+        }
+    }
+}
+
 #[expect(
     clippy::too_many_lines,
     reason = "Path shorthand detection keeps the SVGO-shaped state machine in one place"
@@ -2693,8 +2721,9 @@ fn remove_useless_path_items(items: &mut Vec<PathItem>) {
                 && is_zero(end_y - start_y)
                 && matches!(item.command, 'l' | 'h' | 'v' | 'L' | 'H' | 'V')
         });
+        let keep_zero_draw_stub = is_zero_segment && !subpath_has_draw_after(items, index + 1);
 
-        if !is_zero_segment && !closes_subpath_explicitly {
+        if (!is_zero_segment || keep_zero_draw_stub) && !closes_subpath_explicitly {
             retained.push(item.clone());
         }
 
@@ -3108,6 +3137,14 @@ fn path_item_endpoint(item: &PathItem, cursor_x: f64, cursor_y: f64) -> Option<(
         'a' => Some((cursor_x + item.args[5], cursor_y + item.args[6])),
         _ => None,
     }
+}
+
+fn subpath_has_draw_after(items: &[PathItem], start_index: usize) -> bool {
+    items[start_index..]
+        .iter()
+        .take_while(|item| !matches!(item.command, 'M' | 'm' | 'Z' | 'z'))
+        .next()
+        .is_some()
 }
 
 #[derive(Debug, Clone, Copy)]

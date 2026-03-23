@@ -1172,6 +1172,37 @@ fn convert_path_data_drops_redundant_close_segment_before_z() {
 }
 
 #[test]
+fn convert_path_data_keeps_zero_length_stub_when_it_is_the_only_draw_command() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M40 0h0"/></svg>"#;
+    let config = Config {
+        plugins: vec![PluginSpec::Name("convertPathData".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M40 0h0"/></svg>"#
+    );
+}
+
+#[test]
+fn convert_path_data_reduces_axis_aligned_degenerate_curves_to_lines() {
+    let svg =
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M80 170C100 170 160 170 180 170Z"/></svg>"#;
+    let config = Config {
+        plugins: vec![PluginSpec::Name("convertPathData".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M80 170h100Z"/></svg>"#
+    );
+}
+
+#[test]
 fn convert_path_data_compacts_repeated_curve_commands_into_single_run() {
     let svg =
         r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0c10 0 20 0 30 0c10 0 20 0 30 0"/></svg>"#;
@@ -1183,7 +1214,7 @@ fn convert_path_data_compacts_repeated_curve_commands_into_single_run() {
     let result = optimize(svg, &config).expect("optimize");
     assert_eq!(
         result.data,
-        r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0c10 0 20 0 30 0s20 0 30 0"/></svg>"#
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0h30s20 0 30 0"/></svg>"#
     );
 }
 
