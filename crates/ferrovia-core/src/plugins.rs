@@ -1380,10 +1380,16 @@ fn matrix_to_transform(
 ) -> Vec<TransformItem> {
     let mut shortest = vec![matrix.clone()];
     let mut shortest_len = serialize_transforms(&shortest, params).len();
-    for decomposition in [decompose_qrab(&matrix), decompose_qrcd(&matrix)]
-        .into_iter()
-        .flatten()
-    {
+    let mut decompositions = Vec::new();
+    if let Some(decomposition) = decompose_axis_aligned_matrix(&matrix) {
+        decompositions.push(decomposition);
+    }
+    decompositions.extend(
+        [decompose_qrab(&matrix), decompose_qrcd(&matrix)]
+            .into_iter()
+            .flatten(),
+    );
+    for decomposition in decompositions {
         let rounded: Vec<_> = decomposition
             .iter()
             .cloned()
@@ -1394,12 +1400,35 @@ fn matrix_to_transform(
             .collect();
         let optimized = optimize_decomposition(&rounded, &decomposition);
         let length = serialize_transforms(&optimized, params).len();
-        if length < shortest_len {
+        if length <= shortest_len {
             shortest = optimized;
             shortest_len = length;
         }
     }
     shortest
+}
+
+fn decompose_axis_aligned_matrix(matrix: &TransformItem) -> Option<Vec<TransformItem>> {
+    let [a, b, c, d, e, f] = matrix_array(matrix);
+    if !is_zero(b) || !is_zero(c) {
+        return None;
+    }
+
+    let mut decomposition = Vec::new();
+    if !is_zero(e) || !is_zero(f) {
+        decomposition.push(TransformItem {
+            name: "translate",
+            data: vec![e, f],
+        });
+    }
+    if !is_zero(a - 1.0) || !is_zero(d - 1.0) {
+        decomposition.push(TransformItem {
+            name: "scale",
+            data: vec![a, d],
+        });
+    }
+
+    (!decomposition.is_empty()).then_some(decomposition)
 }
 
 #[expect(

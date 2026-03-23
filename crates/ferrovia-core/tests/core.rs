@@ -1058,6 +1058,21 @@ fn convert_transform_removes_identity_and_shortens_rotate_about_center() {
 }
 
 #[test]
+fn convert_transform_decomposes_axis_aligned_matrix_to_translate_and_scale() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><g transform="matrix(.8 0 0 .8 40 0)"><path d="M0 0h10"/><path d="M20 0h10"/></g></svg>"#;
+    let config = Config {
+        plugins: vec![PluginSpec::Name("convertTransform".to_string())],
+        ..Config::default()
+    };
+
+    let result = optimize(svg, &config).expect("optimize");
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><g transform="translate(40)scale(.8)"><path d="M0 0h10"/><path d="M20 0h10"/></g></svg>"#
+    );
+}
+
+#[test]
 fn convert_path_data_normalizes_lines_and_collapses_repeated_axis_commands() {
     let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0L5 0L8 0L8 4L8 3"/></svg>"#;
     let config = Config {

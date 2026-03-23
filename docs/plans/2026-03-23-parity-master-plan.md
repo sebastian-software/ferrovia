@@ -175,6 +175,16 @@ Status: Active
     - path canonicalization drift, for example the remaining transformed polygon / guide-path cases in `animate-elem-30/36/82-t.svg` and `color-prop-03-t.svg`
     - merge-paths / structural grouping drift, for example `coords-trans-01-b.svg`
     - one remaining foreign-description classifier miss and one animated gradient/default-style case
+- Current state after preferring transform decomposition on equal serialized length:
+  - `smoke-20`: `0 / 20` mismatches
+  - `sample-100`: `22 / 100` mismatches
+  - closed causes in this slice:
+    - `convertTransform` now prefers structured decompositions like `translate(40)scale(.8)` over equivalent `matrix(...)` output when both serialize to the same length
+    - this matches SVGO on the isolated axis-aligned matrix case and removes that tie-break drift from the transform layer itself
+  - representative wins:
+    - the isolated `matrix(.8 0 0 .8 40 0)` regression path now rewrites to `translate(40)scale(.8)`
+  - important note:
+    - this did not reduce the global `sample-100` count by itself because files like `animate-elem-44-t.svg` still have additional downstream path-grouping and canonicalization diffs in the same document
 
 ## Active Cluster Backlog
 1. `smil-reference-preservation`
