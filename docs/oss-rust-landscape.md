@@ -1,6 +1,6 @@
 # Rust OSS Landscape For Ferrovia
 
-Checked on 2026-03-21 against current crates.io/docs.rs metadata and upstream repositories.
+Checked on 2026-03-22 against current crates.io/docs.rs metadata and upstream repositories.
 
 ## Goal
 
@@ -73,6 +73,12 @@ This document lists the maintained Rust OSS components that are plausible buildi
   - Fit: excellent reference and backend inspiration for geometry and normalization behavior
   - Risk: too normalizing to serve as the frontend source of truth for ferrovia
 
+- `lightningcss` `1.0.0-alpha.71` `MPL-2.0`
+  - Role: full CSS parser, typed value model, transformer, and minifier
+  - Fit: promising optional backend for `minifyStyles`-class work and for deeper parsing of `<style>` and inline `style=""` content without building that machinery from scratch
+  - Why: explicit support for both stylesheets and style attributes, strong value-level parsing, and a broad safe-minification toolbox
+  - Risk: broader and more browser-oriented than ferrovia's target CSS subset, still on alpha releases, and likely better used behind a narrow internal adapter than as the primary style layer
+
 ### Usually Not Worth Adopting As Core Building Blocks
 
 - `quick-xml` `0.39.2` `MIT`
@@ -131,7 +137,8 @@ Recommended order:
 
 1. continue using ferrovia-owned inline style helpers for trivial cases
 2. add `cssparser` or `simplecss` behind a private adapter for stylesheet parsing and selective minification
-3. avoid a full browser-grade cascade engine
+3. consider `lightningcss` only as a bounded backend for CSS minification or value parsing once the lighter options stop paying for themselves
+4. avoid a full browser-grade cascade engine
 
 This keeps the CSS wave parity-oriented instead of turning it into a browser project.
 
@@ -160,6 +167,7 @@ Recommended order:
   - optionally `euclid`
 
 - Keep at arm's length:
+  - `lightningcss`
   - `selectors`
   - `kurbo`
   - `lyon_path`
