@@ -80,31 +80,77 @@ Status: Active
   - the dominant remainder is now even more clearly a `convertPathData` and animation-structure block:
     - path command canonicalization and implicit-command parity in `animate-elem-04/05/06/07/08-t.svg`
     - structural attribute / group normalization around translated animation scaffolds in `animate-elem-09/10/11/12-t.svg`
+- Current state after closing the first W3C animation canonicalization wave:
+  - `smoke-20`: `0 / 20` mismatches
+  - `sample-100`: `46 / 100` mismatches
+  - the major closed causes in this wave were:
+    - `convertPathData` now matches SVGO more closely on implicit `M/L` compaction, initial relative `m` preference, smooth-curve shorthand selection, and affine transform bake-in for non-arc paths
+    - `moveGroupAttrsToElems` now repeats until nested groups created in the same pass receive the expected propagated transforms
+    - `removeUnknownsAndDefaults` now drops default `text[x=0]` / `text[y=0]` in the same way as SVGO for the translated W3C animation scaffolds
+  - new direct regressions now pin:
+    - repeated-curve serialization compaction for `convertPathData`
+    - `cleanupIds` begin-list spacing preservation
+    - mixed-content indentation trimming in SVG text containers
+  - the remaining `sample-100` wall is no longer a generic W3C animation bucket; it splits into a few concrete clusters with clear ROI ordering:
+    - SMIL- and default-value normalization drift
+    - mixed-content / text / script serialization
+    - `convertPathData` and path canonicalization drift
+    - transform bake-in and geometry rewrite drift
+    - residual default-/inherit-materialization cases such as `stop-color="inherit"`
 
 ## Active Cluster Backlog
-1. `foreign-descriptive-subtree-retained`
-   - Symptom: Ferrovia preserves XHTML child content under foreign namespaced W3C description elements such as `d:testDescription`, while SVGO strips the unknown subtree and keeps the container element.
-   - Expected owner: `removeUnknownsAndDefaults`
-   - Status: Nearly closed; one remaining `sample-100` occurrence (`animate-elem-82-t.svg`)
-2. `serializer-quote-normalization`
-    - Symptom: Ferrovia preserves input single quotes more often than SVGO, which tends to serialize canonical double-quoted attributes.
-    - Expected owner: serializer normalization
-   - Status: Nearly closed; one remaining `sample-100` occurrence (`conform-viewers-03-f.svg`)
-3. `transform-folding-and-shape-normalization`
-   - Symptom: Some W3C animation files still differ because SVGO folds transforms or shape geometry further than Ferrovia.
-   - Expected owner: geometry / serializer interaction
-   - Status: Reduced, but still open on `coords-trans-04/05/06-t.svg`
-4. `unclassified`
-   - Symptom: Remaining corpus mismatches that are no longer explained by the first closed W3C-description cluster or the current quote/transform heuristics.
-   - Expected owner: next triage pass
-   - Status: Dominant remainder; current inspection shows this is no longer one bucket but at least:
-     - path command canonicalization and shorthand/implicit-command parity in `convertPathData`
-     - structural normalization of translated W3C animation scaffolds, especially `x="0"` cleanup and group/transform placement in `animate-elem-09/10/11/12-t.svg`
-     - remaining W3C harness retention outside the already-closed style/deopt cases
-5. `namespace-and-reference-cleanup`
-   - Symptom: Namespace removal and reference tracking still need broader corpus validation beyond the already fixed detached-subtree case.
-   - Expected owner: `removeUnusedNS` and shared reference helpers
+1. `smil-and-default-normalization`
+   - Symptom: Ferrovia rewrites SMIL references or materializes implicit defaults where SVGO stays source-faithful.
+   - Typical diffs:
+     - `begin="0s; b.end + 1s"` vs. over-canonicalized begin lists
+     - implicit `x="0"` / `y="0"` or similar defaults becoming explicit
+     - explicit `x="0"` on `<use>` and similar zero-default attributes that SVGO leaves implicit
+   - Representative files:
+     - `animate-elem-61/65/68/70-t.svg`
+     - `animate-elem-77/78-t.svg`
+   - Expected owner: shared SMIL/reference/default handling around `cleanupIds` and `removeUnknownsAndDefaults`
+   - Status: Highest ROI remaining block
+2. `mixed-content-serialization`
+   - Symptom: Ferrovia still serializes some `text`/`script`/mixed-content blocks differently from SVGO.
+   - Typical diffs:
+     - inline animate/set children pulled tighter or looser than SVGO
+     - script blocks and mixed-content text containers preserving layout indentation differently
+   - Representative files:
+     - `animate-elem-24-t.svg`
+     - `animate-interact-pevents-01-t.svg`
+     - `animate-script-elem-01-b.svg`
+     - `animate-struct-dom-01-b.svg`
+   - Expected owner: serializer normalization
    - Status: Open
+3. `path-canonicalization`
+   - Symptom: `convertPathData` still chooses different absolute/relative forms or path shorthands than SVGO.
+   - Typical diffs:
+     - `s` vs `c`
+     - `Q/q` choice drift
+     - different command grouping or shape-to-path output forms
+   - Representative files:
+     - `animate-elem-28/32/34/37-t.svg`
+     - `conform-viewers-01-t.svg`
+   - Expected owner: `convertPathData`, shape conversion, and path serializer interaction
+   - Status: Open
+4. `transform-and-geometry-rewrite`
+   - Symptom: Ferrovia bakes transforms or rewrites geometry in places where SVGO leaves the structural transform/shape form intact.
+   - Representative files:
+     - `animate-elem-35/80/81-t.svg`
+   - Expected owner: transform gating and geometry normalization
+   - Status: Open, but lower ROI than SMIL/default and pure serializer work
+5. `foreign-descriptive-subtree-retained`
+   - Symptom: One remaining foreign-description case still retains XHTML child content that SVGO strips.
+   - Representative file:
+     - `animate-elem-82-t.svg`
+   - Expected owner: `removeUnknownsAndDefaults`
+   - Status: Nearly closed; one known `sample-100` occurrence
+6. `serializer-quote-normalization`
+   - Symptom: One remaining file still differs only by quote/attribute normalization.
+   - Representative file:
+     - `conform-viewers-03-f.svg`
+   - Expected owner: serializer normalization
+   - Status: Nearly closed; one known `sample-100` occurrence
 
 ## First Execution Block
 - Harden `scripts/triage-svgo-corpus.mjs` into a reproducible artifact generator.
@@ -115,6 +161,17 @@ Status: Active
   - `path-command-canonicalization`
   - `translated-animation-scaffold-normalization`
   - `remaining-w3c-harness-structure-retained`
+
+## Next Execution Block
+- Close `smil-and-default-normalization` first.
+- Keep scope tight:
+  - do not materialize zero-defaults just because the internal model knows them
+  - preserve SVGO spacing and token boundaries in rewritten `begin=` lists
+  - avoid writing inherited default presentation values such as `stop-color="inherit"` unless SVGO also emits them
+- Remeasure:
+  - `smoke-20`
+  - `sample-100`
+- Only after that continue with the broader `path-canonicalization` and `mixed-content-serialization` blocks.
 
 ## Commands
 - Corpus gate:
