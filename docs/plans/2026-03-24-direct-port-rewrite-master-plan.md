@@ -90,9 +90,13 @@ Rebuild `ferrovia-core` as a strict SVGO-shaped direct port while keeping the ou
   - the first geometry-conversion port is now in place for `rect`, `line`, `polyline`, and `polygon`
   - optional arc conversion for `circle` and `ellipse` is now wired through the direct-port parameter surface
   - direct-port geometry coverage now reaches beyond cleanup into shape-to-path rewriting without introducing a ferrovia-specific abstraction layer
+- `feat: port direct-port convertEllipseToCircle`
+  - non-eccentric `ellipse` conversion now mirrors the upstream `rx === ry || auto` rule
+  - the SVG2 `auto` radius cases are now handled on the same direct-port path
+  - geometry rewriting now covers both direct shape-to-path conversion and the small ellipse-to-circle normalization pass
 - current topological follow-up after selector compat:
-  - stay on the geometry path and port `convertEllipseToCircle` next
-  - then decide whether to continue through geometry helpers or jump into the heavier style/ID block
+  - geometry is now past its first two direct ports and can either continue into more helper-heavy conversion files or yield to the heavier style/ID block
+  - the next reasonable direct-port jump is now `cleanupIds`/style infrastructure or another small geometry plugin if upstream order and helper pressure justify it
   - selector coverage can remain minimal until a later plugin actually forces a broader surface
 
 ## Port Order

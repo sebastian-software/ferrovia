@@ -9,6 +9,10 @@ use crate::types::{PathDataItem, XastChild, XastRoot};
 /// # Errors
 ///
 /// This direct port currently does not return plugin-specific runtime errors.
+///
+/// # Panics
+///
+/// Panics if the hard-coded point parsing regex becomes invalid.
 pub fn apply(root: &mut XastRoot, params: Option<&Value>) -> crate::error::Result<()> {
     let convert_arcs = params
         .and_then(|value| value.get("convertArcs"))
@@ -24,6 +28,7 @@ pub fn apply(root: &mut XastRoot, params: Option<&Value>) -> crate::error::Resul
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)]
 fn convert_shape_to_path(
     children: &mut Vec<XastChild>,
     convert_arcs: bool,
