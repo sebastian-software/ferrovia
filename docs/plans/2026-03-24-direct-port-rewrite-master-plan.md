@@ -121,10 +121,14 @@ Rebuild `ferrovia-core` as a strict SVGO-shaped direct port while keeping the ou
   - common inheritable child attributes now hoist back onto `g` elements through the upstream-style post-order rewrite flow
   - `transform` hoisting now respects the upstream deopts around all-path children, filter-like group attributes, and stylesheet presence
   - the direct port now covers both directions of the paired group-attribute movement rewrites before entering the heavier style layer
+- `feat: port direct-port mergeStyles`
+  - style-element merging now mirrors the upstream `foreignObject` skip, invalid-type deopt, empty-style removal, media wrapping, and CDATA promotion flow
+  - the first style element is now kept as the merge anchor and later style elements are detached in the same direct-port order as SVGO
+  - the rewrite has now entered the heavier style layer without replacing the current xast tree or serializer
 - current topological follow-up after selector compat:
-  - the next upstream-missing files are now dominated by the heavier cleanup/style and group-rewrite blocks
-  - the next reasonable direct-port jump is now the broader style files such as `mergeStyles` / `inlineStyles`, or a smaller remaining group/cleanup block if it unlocks them
-  - selector coverage can remain minimal until a later style-oriented plugin actually forces a broader surface
+  - the next upstream-missing files are now dominated by the remaining style and geometry blocks
+  - the next reasonable direct-port jump is now `inlineStyles`, then `minifyStyles`, before returning to the deeper path/cleanup layer
+  - selector coverage can stay incremental until `inlineStyles` forces broader css-tree- and selector-surface parity
 
 ## Port Order
 
