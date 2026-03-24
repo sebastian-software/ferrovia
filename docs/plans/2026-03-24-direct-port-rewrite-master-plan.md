@@ -137,9 +137,13 @@ Rebuild `ferrovia-core` as a strict SVGO-shaped direct port while keeping the ou
   - the rewrite now covers the first real semantic cleanup slice for unknown children, unknown attrs, default attrs, XML default markup declarations, and useless inheritable overrides
   - stylesheet-aware guards are now wired through the direct-port path via `collectStylesheet`, `computeStyle`, and `includesAttrSelector`
   - the collections layer now carries the first explicit non-inheritable presentation group set needed by the semantic cleanup layer
+- `feat: port direct-port removeHiddenElems`
+  - the rewrite now covers the first real hidden-element cleanup slice for zero-sized shapes, hidden/display-none nodes, empty paths, and unreferenced non-rendering definitions
+  - the direct-port flow now mirrors the upstream stylesheet/script deopt around non-rendering cleanup and the root-exit cleanup of empty `defs`
+  - the collections layer now carries the upstream non-rendering element group needed by this semantic cleanup block
 - current topological follow-up after selector compat:
   - the next upstream-missing files are now dominated by the remaining style and geometry blocks
-  - the next reasonable direct-port jump is now `removeHiddenElems`, then `convertColors`, `convertPathData`, and `mergePaths`
+  - the next reasonable direct-port jump is now `convertColors`, then `convertPathData`, and `mergePaths`
   - selector and CSS support can stay incremental until a later style-oriented plugin forces broader css-tree- and selector-surface parity than the current direct-port slice
 
 ## Port Order

@@ -30,6 +30,7 @@ pub mod remove_elements_by_attr;
 pub mod remove_empty_attrs;
 pub mod remove_empty_containers;
 pub mod remove_empty_text;
+pub mod remove_hidden_elems;
 pub mod remove_metadata;
 pub mod remove_off_canvas_paths;
 pub mod remove_raster_images;
@@ -73,6 +74,7 @@ pub fn apply_plugin(root: &mut XastRoot, plugin: &PluginSpec) -> Result<()> {
         "removeEmptyAttrs" => remove_empty_attrs::apply(root),
         "removeEmptyContainers" => remove_empty_containers::apply(root),
         "removeEmptyText" => remove_empty_text::apply(root, plugin.params()),
+        "removeHiddenElems" => remove_hidden_elems::apply(root, plugin.params()),
         "removeMetadata" => remove_metadata::apply(root),
         "removeOffCanvasPaths" => remove_off_canvas_paths::apply(root),
         "removeRasterImages" => remove_raster_images::apply(root),

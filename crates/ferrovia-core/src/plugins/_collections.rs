@@ -62,6 +62,18 @@ const CONTAINER_ELEMS: &[&str] = &[
     "symbol",
 ];
 
+const NON_RENDERING_ELEMS: &[&str] = &[
+    "clipPath",
+    "filter",
+    "linearGradient",
+    "marker",
+    "mask",
+    "pattern",
+    "radialGradient",
+    "solidColor",
+    "symbol",
+];
+
 const ANIMATION_ELEMS: &[&str] = &[
     "animate",
     "animateColor",
@@ -257,6 +269,11 @@ pub fn is_text_elem(name: &str) -> bool {
 #[must_use]
 pub fn is_path_elem(name: &str) -> bool {
     PATH_ELEMS.contains(&name)
+}
+
+#[must_use]
+pub fn is_non_rendering_elem(name: &str) -> bool {
+    NON_RENDERING_ELEMS.contains(&name)
 }
 
 #[must_use]
