@@ -105,9 +105,13 @@ Rebuild `ferrovia-core` as a strict SVGO-shaped direct port while keeping the ou
 - `feat: tighten direct-port script detection helpers`
   - `lib/svgo/tools` now mirrors the upstream `hasScripts` checks for script content, javascript hrefs, and event attributes
   - the cleanupIds deopt surface now has the minimum upstream-compatible foundation it expects
+- `feat: port direct-port cleanupIds`
+  - the rewrite tree now mirrors the upstream duplicate-id cleanup, unused-id removal, and referenced-id minification flow
+  - reference rewrites now cover `href`, `url(#...)`, and SMIL `begin` patterns on the direct-port path
+  - the upstream deopt around embedded styles and scripts is now enforced on the rewrite path
 - current topological follow-up after selector compat:
   - the next upstream-missing files are now dominated by the heavier cleanup/style and group-rewrite blocks
-  - `cleanupIds` is now the active next plugin port on top of the tightened script/reference helpers
+  - the next reasonable direct-port jump is now structural rewrite territory like `collapseGroups` or a broader style file such as `mergeStyles`/`inlineStyles`
   - selector coverage can remain minimal until a later plugin actually forces a broader surface
 
 ## Port Order
