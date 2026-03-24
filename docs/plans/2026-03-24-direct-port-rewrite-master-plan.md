@@ -64,10 +64,13 @@ Rebuild `ferrovia-core` as a strict SVGO-shaped direct port while keeping the ou
   - `removeEmptyAttrs`
   - `removeEmptyText`
   - `_collections` now carries the minimal editor namespace and conditional-processing sets needed by those ports
+- `feat: port direct-port removeEmptyContainers`
+  - `_collections` now carries the minimal container element set needed by the direct port
+  - `removeEmptyContainers` now removes empty non-svg containers, keeps pattern/mask/filter edge cases, and prunes `use` references to removed ids
 - current topological follow-up after selector compat:
   - deepen selector coverage beyond the current minimal surface
   - port the next simple upstream cleanup plugins before the heavier style/geometry blocks
-  - likely next: `removeDeprecatedAttrs` or `removeEmptyContainers`, depending on which shared collections/style surface is cheaper to add without widening the rewrite tree too early
+  - likely next: `removeDeprecatedAttrs` or `removeRasterImages`, depending on whether we want the next step to widen collections/style data or stay in pure structural cleanup
 
 ## Port Order
 

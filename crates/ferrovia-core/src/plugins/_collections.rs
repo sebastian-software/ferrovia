@@ -47,6 +47,20 @@ const EDITOR_NAMESPACES: &[&str] = &[
 const CONDITIONAL_PROCESSING_ATTRS: &[&str] =
     &["requiredFeatures", "requiredExtensions", "systemLanguage"];
 
+const CONTAINER_ELEMS: &[&str] = &[
+    "a",
+    "defs",
+    "foreignObject",
+    "g",
+    "marker",
+    "mask",
+    "missing-glyph",
+    "pattern",
+    "svg",
+    "switch",
+    "symbol",
+];
+
 #[must_use]
 pub fn is_text_elem(name: &str) -> bool {
     TEXT_ELEMS.contains(&name)
@@ -70,4 +84,9 @@ pub fn is_editor_namespace(namespace: &str) -> bool {
 #[must_use]
 pub fn is_conditional_processing_attr(name: &str) -> bool {
     CONDITIONAL_PROCESSING_ATTRS.contains(&name)
+}
+
+#[must_use]
+pub fn is_container_elem(name: &str) -> bool {
+    CONTAINER_ELEMS.contains(&name)
 }

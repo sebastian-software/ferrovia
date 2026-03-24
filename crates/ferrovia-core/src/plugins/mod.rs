@@ -15,6 +15,7 @@ pub mod remove_doctype;
 pub mod remove_editors_ns_data;
 pub mod remove_elements_by_attr;
 pub mod remove_empty_attrs;
+pub mod remove_empty_containers;
 pub mod remove_empty_text;
 pub mod remove_metadata;
 pub mod remove_title;
@@ -37,6 +38,7 @@ pub fn apply_plugin(root: &mut XastRoot, plugin: &PluginSpec) -> Result<()> {
         "removeEditorsNSData" => remove_editors_ns_data::apply(root, plugin.params()),
         "removeElementsByAttr" => remove_elements_by_attr::apply(root, plugin.params()),
         "removeEmptyAttrs" => remove_empty_attrs::apply(root),
+        "removeEmptyContainers" => remove_empty_containers::apply(root),
         "removeEmptyText" => remove_empty_text::apply(root, plugin.params()),
         "removeMetadata" => remove_metadata::apply(root),
         "removeTitle" => remove_title::apply(root),
