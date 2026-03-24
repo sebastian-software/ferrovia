@@ -133,9 +133,13 @@ Rebuild `ferrovia-core` as a strict SVGO-shaped direct port while keeping the ou
   - the rewrite now mirrors the upstream gather-and-exit flow for `<style>` elements and `style` attributes
   - a minimal `ferrovia-csso-compat` minifier is now in place for style-element text and declaration-list minification, including empty-style removal and CDATA preservation for angle-bracket content
   - usage tracking and script deopt collection now exist on the direct-port path even though the compat minifier still uses only a minimal subset of that data
+- `feat: port direct-port removeUnknownsAndDefaults`
+  - the rewrite now covers the first real semantic cleanup slice for unknown children, unknown attrs, default attrs, XML default markup declarations, and useless inheritable overrides
+  - stylesheet-aware guards are now wired through the direct-port path via `collectStylesheet`, `computeStyle`, and `includesAttrSelector`
+  - the collections layer now carries the first explicit non-inheritable presentation group set needed by the semantic cleanup layer
 - current topological follow-up after selector compat:
   - the next upstream-missing files are now dominated by the remaining style and geometry blocks
-  - the next reasonable direct-port jump is now back into the deeper cleanup/path blocks, especially `removeUnknownsAndDefaults`, `removeHiddenElems`, `convertColors`, `convertPathData`, and `mergePaths`
+  - the next reasonable direct-port jump is now `removeHiddenElems`, then `convertColors`, `convertPathData`, and `mergePaths`
   - selector and CSS support can stay incremental until a later style-oriented plugin forces broader css-tree- and selector-surface parity than the current direct-port slice
 
 ## Port Order

@@ -118,6 +118,17 @@ const INHERITABLE_ATTRS: &[&str] = &[
     "writing-mode",
 ];
 
+const PRESENTATION_NON_INHERITABLE_GROUP_ATTRS: &[&str] = &[
+    "clip-path",
+    "display",
+    "filter",
+    "mask",
+    "opacity",
+    "text-decoration",
+    "transform",
+    "unicode-bidi",
+];
+
 const DEPRECATED_GROUP_ANIMATION_ATTRIBUTE_TARGET_UNSAFE: &[&str] = &["attributeType"];
 const DEPRECATED_GROUP_CONDITIONAL_PROCESSING_UNSAFE: &[&str] = &["requiredFeatures"];
 const DEPRECATED_GROUP_CORE_UNSAFE: &[&str] = &["xml:base", "xml:lang", "xml:space"];
@@ -281,6 +292,11 @@ pub fn is_animation_elem(name: &str) -> bool {
 #[must_use]
 pub fn is_inheritable_attr(name: &str) -> bool {
     INHERITABLE_ATTRS.contains(&name)
+}
+
+#[must_use]
+pub fn is_presentation_non_inheritable_group_attr(name: &str) -> bool {
+    PRESENTATION_NON_INHERITABLE_GROUP_ATTRS.contains(&name)
 }
 
 #[must_use]

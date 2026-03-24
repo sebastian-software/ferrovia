@@ -17,6 +17,7 @@ pub mod merge_styles;
 pub mod minify_styles;
 pub mod move_group_attrs_to_elems;
 pub mod move_elems_attrs_to_group;
+pub mod remove_unknowns_and_defaults;
 pub mod remove_attributes_by_selector;
 pub mod remove_attrs;
 pub mod remove_comments;
@@ -78,6 +79,7 @@ pub fn apply_plugin(root: &mut XastRoot, plugin: &PluginSpec) -> Result<()> {
         "removeScripts" => remove_scripts::apply(root),
         "removeStyleElement" => remove_style_element::apply(root),
         "removeTitle" => remove_title::apply(root),
+        "removeUnknownsAndDefaults" => remove_unknowns_and_defaults::apply(root, plugin.params()),
         "removeUnusedNS" => remove_unused_ns::apply(root),
         "removeXlink" => remove_xlink::apply(root, plugin.params()),
         "removeViewBox" => remove_view_box::apply(root),
