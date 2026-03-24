@@ -12,6 +12,7 @@ pub mod cleanup_ids;
 pub mod collapse_groups;
 pub mod convert_ellipse_to_circle;
 pub mod convert_shape_to_path;
+pub mod move_group_attrs_to_elems;
 pub mod remove_attributes_by_selector;
 pub mod remove_attrs;
 pub mod remove_comments;
@@ -50,6 +51,7 @@ pub fn apply_plugin(root: &mut XastRoot, plugin: &PluginSpec) -> Result<()> {
         "collapseGroups" => collapse_groups::apply(root),
         "convertEllipseToCircle" => convert_ellipse_to_circle::apply(root),
         "convertShapeToPath" => convert_shape_to_path::apply(root, plugin.params()),
+        "moveGroupAttrsToElems" => move_group_attrs_to_elems::apply(root),
         "removeComments" => remove_comments::apply(root, plugin.params()),
         "removeDesc" => remove_desc::apply(root, plugin.params()),
         "removeDeprecatedAttrs" => remove_deprecated_attrs::apply(root, plugin.params()),

@@ -1,4 +1,5 @@
 const TEXT_ELEMS: &[&str] = &["text", "tspan", "tref", "textPath", "altGlyph"];
+const PATH_ELEMS: &[&str] = &["glyph", "missing-glyph", "path"];
 
 const REFERENCES_PROPS: &[&str] = &[
     "fill",
@@ -240,6 +241,11 @@ pub struct ElementDeprecatedConfig {
 #[must_use]
 pub fn is_text_elem(name: &str) -> bool {
     TEXT_ELEMS.contains(&name)
+}
+
+#[must_use]
+pub fn is_path_elem(name: &str) -> bool {
+    PATH_ELEMS.contains(&name)
 }
 
 #[must_use]
