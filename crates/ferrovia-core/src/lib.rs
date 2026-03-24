@@ -9,6 +9,7 @@ pub mod parser;
 pub mod plugins;
 pub mod serializer;
 pub mod style;
+pub mod svgo_spike;
 pub mod xmltokenizer;
 
 pub use config::{Config, Js2Svg, PluginConfig, PluginSpec};

@@ -15,7 +15,7 @@ use crate::style::{
     update_style_attribute,
 };
 
-const PRESET_DEFAULT: &[&str] = &[
+pub(crate) const PRESET_DEFAULT: &[&str] = &[
     "removeDoctype",
     "removeXMLProcInst",
     "removeComments",
@@ -61,51 +61,56 @@ pub fn apply_plugins(doc: &mut Document, config: &Config) -> Result<()> {
     for plugin in expand_plugins(config) {
         let name = plugin.name().to_string();
         let params = plugin.params().cloned();
-        match name.as_str() {
-            "removeDoctype" => remove_by(doc, matches_doctype),
-            "removeXMLProcInst" => remove_by(doc, matches_xml_decl),
-            "removeComments" => remove_comments(doc, params.as_ref()),
-            "removeDeprecatedAttrs" => remove_deprecated_attrs(doc, params.as_ref()),
-            "removeMetadata" => remove_elements(doc, "metadata"),
-            "removeEditorsNSData" => remove_editors_ns_data(doc, params.as_ref()),
-            "cleanupAttrs" => cleanup_attrs(doc, params.as_ref()),
-            "mergeStyles" => merge_styles(doc),
-            "inlineStyles" => inline_styles(doc, params.as_ref()),
-            "minifyStyles" => minify_styles(doc, params.as_ref()),
-            "removeUselessDefs" => remove_useless_defs(doc),
-            "cleanupNumericValues" => cleanup_numeric_values(doc, params.as_ref()),
-            "convertColors" => convert_colors(doc, params.as_ref()),
-            "removeUnknownsAndDefaults" => remove_unknowns_and_defaults(doc, params.as_ref()),
-            "removeNonInheritableGroupAttrs" => remove_non_inheritable_group_attrs(doc),
-            "removeUselessStrokeAndFill" => remove_useless_stroke_and_fill(doc, params.as_ref()),
-            "cleanupEnableBackground" => cleanup_enable_background(doc),
-            "removeHiddenElems" => remove_hidden_elems(doc, params.as_ref()),
-            "removeEmptyText" => remove_empty_text(doc, params.as_ref()),
-            "convertShapeToPath" => convert_shape_to_path(doc, params.as_ref()),
-            "convertEllipseToCircle" => convert_ellipse_to_circle(doc),
-            "convertTransform" => convert_transform(doc, params.as_ref()),
-            "convertPathData" => convert_path_data(doc, params.as_ref()),
-            "mergePaths" => merge_paths(doc, params.as_ref()),
-            "moveElemsAttrsToGroup" => move_elems_attrs_to_group(doc),
-            "moveGroupAttrsToElems" => move_group_attrs_to_elems(doc),
-            "collapseGroups" => collapse_groups(doc),
-            "removeEmptyAttrs" => remove_empty_attrs(doc),
-            "removeEmptyContainers" => remove_empty_containers(doc),
-            "removeUnusedNS" => remove_unused_ns(doc),
-            "sortAttrs" => sort_attrs(doc, params.as_ref()),
-            "sortDefsChildren" => sort_defs_children(doc),
-            "removeTitle" => remove_elements(doc, "title"),
-            "removeDesc" => remove_desc(doc, params.as_ref()),
-            "cleanupIds" => cleanup_ids(doc, params.as_ref()),
-            "removeDimensions" => remove_dimensions(doc),
-            "removeXMLNS" => remove_xmlns(doc),
-            other => return Err(FerroviaError::UnsupportedPlugin(other.to_string())),
-        }
+        apply_named_plugin(doc, name.as_str(), params.as_ref())?;
     }
     Ok(())
 }
 
-fn expand_plugins(config: &Config) -> Vec<PluginSpec> {
+pub(crate) fn apply_named_plugin(doc: &mut Document, name: &str, params: Option<&Value>) -> Result<()> {
+    match name {
+        "removeDoctype" => remove_by(doc, matches_doctype),
+        "removeXMLProcInst" => remove_by(doc, matches_xml_decl),
+        "removeComments" => remove_comments(doc, params),
+        "removeDeprecatedAttrs" => remove_deprecated_attrs(doc, params),
+        "removeMetadata" => remove_elements(doc, "metadata"),
+        "removeEditorsNSData" => remove_editors_ns_data(doc, params),
+        "cleanupAttrs" => cleanup_attrs(doc, params),
+        "mergeStyles" => merge_styles(doc),
+        "inlineStyles" => inline_styles(doc, params),
+        "minifyStyles" => minify_styles(doc, params),
+        "removeUselessDefs" => remove_useless_defs(doc),
+        "cleanupNumericValues" => cleanup_numeric_values(doc, params),
+        "convertColors" => convert_colors(doc, params),
+        "removeUnknownsAndDefaults" => remove_unknowns_and_defaults(doc, params),
+        "removeNonInheritableGroupAttrs" => remove_non_inheritable_group_attrs(doc),
+        "removeUselessStrokeAndFill" => remove_useless_stroke_and_fill(doc, params),
+        "cleanupEnableBackground" => cleanup_enable_background(doc),
+        "removeHiddenElems" => remove_hidden_elems(doc, params),
+        "removeEmptyText" => remove_empty_text(doc, params),
+        "convertShapeToPath" => convert_shape_to_path(doc, params),
+        "convertEllipseToCircle" => convert_ellipse_to_circle(doc),
+        "convertTransform" => convert_transform(doc, params),
+        "convertPathData" => convert_path_data(doc, params),
+        "mergePaths" => merge_paths(doc, params),
+        "moveElemsAttrsToGroup" => move_elems_attrs_to_group(doc),
+        "moveGroupAttrsToElems" => move_group_attrs_to_elems(doc),
+        "collapseGroups" => collapse_groups(doc),
+        "removeEmptyAttrs" => remove_empty_attrs(doc),
+        "removeEmptyContainers" => remove_empty_containers(doc),
+        "removeUnusedNS" => remove_unused_ns(doc),
+        "sortAttrs" => sort_attrs(doc, params),
+        "sortDefsChildren" => sort_defs_children(doc),
+        "removeTitle" => remove_elements(doc, "title"),
+        "removeDesc" => remove_desc(doc, params),
+        "cleanupIds" => cleanup_ids(doc, params),
+        "removeDimensions" => remove_dimensions(doc),
+        "removeXMLNS" => remove_xmlns(doc),
+        other => return Err(FerroviaError::UnsupportedPlugin(other.to_string())),
+    }
+    Ok(())
+}
+
+pub(crate) fn expand_plugins(config: &Config) -> Vec<PluginSpec> {
     let mut expanded = Vec::new();
     for plugin in &config.plugins {
         if !plugin.enabled() {
