@@ -75,6 +75,8 @@ dependencies = [
 name = "ferrovia-core"
 version = "0.1.0"
 dependencies = [
+ "ferrovia-css-select-compat",
+ "ferrovia-css-what-compat",
  "ferrovia-sax-compat",
  "regex",
  "serde",

@@ -48,9 +48,14 @@ Rebuild `ferrovia-core` as a strict SVGO-shaped direct port while keeping the ou
     - attribute presence/equality selectors
     - descendant and child combinators
   - `lib/svgo/css-select-adapter` now exposes parent, sibling, child, text, name, and attribute access over the rewrite xast tree
-- current topological follow-up after xast/query parity:
-  - deepen compat crates beyond stubs
-  - port next plugin files in upstream order on top of the helper and query layers
+- `feat: add selector compat and first query-driven plugin`
+  - `ferrovia-css-what-compat` now parses a minimal but real selector IR
+  - `ferrovia-css-select-compat` now runs selector matching through a small adapter trait
+  - `lib/xast` delegates selector parsing and matching to the compat crates
+  - `removeAttributesBySelector` is now ported against that path
+- current topological follow-up after selector compat:
+  - deepen selector coverage beyond the current minimal surface
+  - port the next upstream plugins that depend on query traversal, likely `removeAttrs`, `removeElementsByAttr`, or `convertOneStopGradients`
 
 ## Port Order
 

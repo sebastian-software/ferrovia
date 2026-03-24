@@ -1,5 +1,9 @@
+use ferrovia_css_select_compat::Adapter;
+use ferrovia_css_what_compat::CompoundSelector;
+
 use crate::types::{XastChild, XastElement, XastRoot};
 use crate::util::map_nodes_to_parents::map_nodes_to_parents;
+use crate::xast::element_matches_compound;
 
 pub struct CssSelectAdapter<'a> {
     root: &'a XastRoot,
@@ -65,6 +69,23 @@ impl<'a> CssSelectAdapter<'a> {
             || self.root.children.as_slice(),
             |parent| parent.children.as_slice(),
         )
+    }
+}
+
+impl<'a> Adapter<'a, XastChild> for CssSelectAdapter<'a> {
+    fn is_tag(&self, node: &XastChild) -> bool {
+        Self::is_tag(node)
+    }
+
+    fn children(&self, node: &'a XastChild) -> &'a [XastChild] {
+        Self::get_children(node)
+    }
+
+    fn matches_compound(&self, node: &XastChild, compound: &CompoundSelector) -> bool {
+        let XastChild::Element(element) = node else {
+            return false;
+        };
+        element_matches_compound(element, compound)
     }
 }
 

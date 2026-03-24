@@ -8,6 +8,8 @@ authors.workspace = true
 description = "Core SVG optimizer library for the ferrovia SVGO-compatible Rust port"
 
 [dependencies]
+ferrovia-css-select-compat = { path = "../ferrovia-css-select-compat" }
+ferrovia-css-what-compat = { path = "../ferrovia-css-what-compat" }
 ferrovia-sax-compat = { path = "../ferrovia-sax-compat" }
 regex.workspace = true
 serde.workspace = true
