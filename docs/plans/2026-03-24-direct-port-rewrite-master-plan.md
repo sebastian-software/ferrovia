@@ -129,10 +129,14 @@ Rebuild `ferrovia-core` as a strict SVGO-shaped direct port while keeping the ou
   - style inlining now mirrors the first real upstream flow from stylesheet collection into matched element `style` attributes
   - the direct-port slice now covers selector matching, `onlyMatchedOnce`, matched-selector cleanup, class/id cleanup, and `foreignObject` skipping
   - CSS support is still intentionally minimal and targeted at the current rewrite surface, but the rewrite now has both style merging and style inlining in place before `minifyStyles`
+- `feat: port direct-port minifyStyles`
+  - the rewrite now mirrors the upstream gather-and-exit flow for `<style>` elements and `style` attributes
+  - a minimal `ferrovia-csso-compat` minifier is now in place for style-element text and declaration-list minification, including empty-style removal and CDATA preservation for angle-bracket content
+  - usage tracking and script deopt collection now exist on the direct-port path even though the compat minifier still uses only a minimal subset of that data
 - current topological follow-up after selector compat:
   - the next upstream-missing files are now dominated by the remaining style and geometry blocks
-  - the next reasonable direct-port jump is now `minifyStyles`, then the deeper cleanup/path blocks hanging off the style layer
-  - selector and CSS support can stay incremental until a later style-oriented plugin forces broader css-tree- and selector-surface parity
+  - the next reasonable direct-port jump is now back into the deeper cleanup/path blocks, especially `removeUnknownsAndDefaults`, `removeHiddenElems`, `convertColors`, `convertPathData`, and `mergePaths`
+  - selector and CSS support can stay incremental until a later style-oriented plugin forces broader css-tree- and selector-surface parity than the current direct-port slice
 
 ## Port Order
 
