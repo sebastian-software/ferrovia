@@ -11,6 +11,7 @@ pub mod cleanup_enable_background;
 pub mod cleanup_ids;
 pub mod collapse_groups;
 pub mod convert_ellipse_to_circle;
+pub mod convert_colors;
 pub mod convert_shape_to_path;
 pub mod inline_styles;
 pub mod merge_styles;
@@ -56,6 +57,7 @@ pub fn apply_plugin(root: &mut XastRoot, plugin: &PluginSpec) -> Result<()> {
         "cleanupIds" => cleanup_ids::apply(root, plugin.params()),
         "collapseGroups" => collapse_groups::apply(root),
         "convertEllipseToCircle" => convert_ellipse_to_circle::apply(root),
+        "convertColors" => convert_colors::apply(root, plugin.params()),
         "convertShapeToPath" => convert_shape_to_path::apply(root, plugin.params()),
         "inlineStyles" => inline_styles::apply(root, plugin.params()),
         "mergeStyles" => merge_styles::apply(root),

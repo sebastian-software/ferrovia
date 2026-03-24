@@ -141,9 +141,13 @@ Rebuild `ferrovia-core` as a strict SVGO-shaped direct port while keeping the ou
   - the rewrite now covers the first real hidden-element cleanup slice for zero-sized shapes, hidden/display-none nodes, empty paths, and unreferenced non-rendering definitions
   - the direct-port flow now mirrors the upstream stylesheet/script deopt around non-rendering cleanup and the root-exit cleanup of empty `defs`
   - the collections layer now carries the upstream non-rendering element group needed by this semantic cleanup block
+- `feat: port direct-port convertColors`
+  - the rewrite now mirrors the upstream color-conversion flow for `currentColor`, named colors, `rgb(...)`, case conversion, short hex, and short-name normalization
+  - mask scope is now tracked on the direct-port path so `currentColor` conversion deopts inside `mask` just like SVGO
+  - the direct-port surface now accepts `currentColor` as boolean, exact string, and regex-shaped config on the Rust side
 - current topological follow-up after selector compat:
   - the next upstream-missing files are now dominated by the remaining style and geometry blocks
-  - the next reasonable direct-port jump is now `convertColors`, then `convertPathData`, and `mergePaths`
+  - the next reasonable direct-port jump is now `convertPathData`, then `mergePaths`
   - selector and CSS support can stay incremental until a later style-oriented plugin forces broader css-tree- and selector-surface parity than the current direct-port slice
 
 ## Port Order
