@@ -94,9 +94,13 @@ Rebuild `ferrovia-core` as a strict SVGO-shaped direct port while keeping the ou
   - non-eccentric `ellipse` conversion now mirrors the upstream `rx === ry || auto` rule
   - the SVG2 `auto` radius cases are now handled on the same direct-port path
   - geometry rewriting now covers both direct shape-to-path conversion and the small ellipse-to-circle normalization pass
+- `feat: port direct-port cleanupAttrs`
+  - attribute value cleanup now mirrors the upstream newline, trim, and repeated-space pass
+  - the direct port preserves the upstream parameter surface: `newlines`, `trim`, and `spaces`
+  - recursive attribute cleanup is now covered without adding any new shared rewrite abstraction
 - current topological follow-up after selector compat:
-  - geometry is now past its first two direct ports and can either continue into more helper-heavy conversion files or yield to the heavier style/ID block
-  - the next reasonable direct-port jump is now `cleanupIds`/style infrastructure or another small geometry plugin if upstream order and helper pressure justify it
+  - the next upstream-missing files are now mostly the heavier cleanup/style and group-rewrite blocks
+  - the next reasonable direct-port jump is `cleanupEnableBackground` or a deliberate move into the heavier style/ID block around `cleanupIds`
   - selector coverage can remain minimal until a later plugin actually forces a broader surface
 
 ## Port Order
