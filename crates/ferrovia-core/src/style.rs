@@ -1,3 +1,5 @@
+use ferrovia_css_what_compat::parse;
+
 use crate::plugins::_collections::is_presentation_attr;
 use crate::types::{
     ComputedStyle, Specificity, Stylesheet, StylesheetDeclaration, StylesheetRule, XastChild,
@@ -81,17 +83,69 @@ pub fn parse_style_declarations(css: &str) -> Vec<StylesheetDeclaration> {
         .filter_map(|part| {
             let (name, value) = part.split_once(':')?;
             let name = name.trim();
-            let value = value.trim();
+            let mut value = value.trim();
             if name.is_empty() || value.is_empty() {
                 return None;
+            }
+            let important = value.ends_with("!important");
+            if important {
+                value = value.trim_end_matches("!important").trim_end();
             }
             Some(StylesheetDeclaration {
                 name: name.to_string(),
                 value: value.to_string(),
-                important: false,
+                important,
             })
         })
         .collect()
+}
+
+#[must_use]
+pub fn includes_attr_selector(
+    selector: &str,
+    name: &str,
+    value: Option<&str>,
+    traversed: bool,
+) -> bool {
+    let selectors = parse(selector);
+    for group in selectors {
+        for (index, token) in group.tokens.iter().enumerate() {
+            if traversed && index == group.tokens.len().saturating_sub(1) {
+                continue;
+            }
+
+            if token.compound.id.as_deref() == Some(name)
+                && value.is_none()
+            {
+                return true;
+            }
+
+            if name == "id"
+                && let Some(id) = &token.compound.id
+                && value.is_none_or(|expected| expected == id)
+            {
+                return true;
+            }
+
+            if name == "class"
+                && token
+                    .compound
+                    .classes
+                    .iter()
+                    .any(|class_name| value.is_none_or(|expected| expected == class_name))
+            {
+                return true;
+            }
+
+            if token.compound.attributes.iter().any(|attribute| {
+                attribute.name == name
+                    && value.is_none_or(|expected| attribute.value.as_deref() == Some(expected))
+            }) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn collect_rules(children: &[XastChild], rules: &mut Vec<StylesheetRule>) {
