@@ -18,6 +18,8 @@ pub mod remove_empty_attrs;
 pub mod remove_empty_containers;
 pub mod remove_empty_text;
 pub mod remove_metadata;
+pub mod remove_raster_images;
+pub mod remove_style_element;
 pub mod remove_title;
 pub mod remove_xml_proc_inst;
 
@@ -41,6 +43,8 @@ pub fn apply_plugin(root: &mut XastRoot, plugin: &PluginSpec) -> Result<()> {
         "removeEmptyContainers" => remove_empty_containers::apply(root),
         "removeEmptyText" => remove_empty_text::apply(root, plugin.params()),
         "removeMetadata" => remove_metadata::apply(root),
+        "removeRasterImages" => remove_raster_images::apply(root),
+        "removeStyleElement" => remove_style_element::apply(root),
         "removeTitle" => remove_title::apply(root),
         "removeXMLProcInst" => remove_xml_proc_inst::apply(root),
         other => Err(FerroviaError::UnsupportedPlugin(other.to_string())),
