@@ -2,8 +2,8 @@
 
 use ferrovia_core::path::{parse_path_data, stringify_path_data};
 use ferrovia_core::style::{collect_stylesheet, compute_style, parse_style_declarations};
-use ferrovia_core::svgo::tools::{cleanup_out_data, find_references, includes_url_reference};
-use ferrovia_core::types::{XastChild, XastElement, XastRoot, XastText};
+use ferrovia_core::svgo::tools::{cleanup_out_data, find_references, has_scripts, includes_url_reference};
+use ferrovia_core::types::{XastAttribute, XastChild, XastElement, XastRoot, XastText};
 
 #[test]
 fn parses_basic_path_data_items() {
@@ -101,4 +101,36 @@ fn finds_svg_references_like_svgo_tools_layer() {
     assert_eq!(find_references("href", "#shape"), vec!["shape"]);
     assert_eq!(find_references("begin", "target.begin+1s"), vec!["target"]);
     assert_eq!(cleanup_out_data(&[0.0, -1.0, 0.5, 0.5], false), "0-1 .5.5");
+}
+
+#[test]
+fn detects_script_like_nodes() {
+    let script = XastElement {
+        name: "script".to_string(),
+        attributes: Vec::new(),
+        children: vec![XastChild::Text(XastText {
+            value: "alert(1)".to_string(),
+        })],
+    };
+    assert!(has_scripts(&script));
+
+    let anchor = XastElement {
+        name: "a".to_string(),
+        attributes: vec![XastAttribute {
+            name: "href".to_string(),
+            value: " javascript:alert(1)".to_string(),
+        }],
+        children: Vec::new(),
+    };
+    assert!(has_scripts(&anchor));
+
+    let graphical = XastElement {
+        name: "rect".to_string(),
+        attributes: vec![XastAttribute {
+            name: "onclick".to_string(),
+            value: "doStuff()".to_string(),
+        }],
+        children: Vec::new(),
+    };
+    assert!(has_scripts(&graphical));
 }

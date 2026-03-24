@@ -102,9 +102,12 @@ Rebuild `ferrovia-core` as a strict SVGO-shaped direct port while keeping the ou
   - root filter detection plus the `svg`/`mask`/`pattern` cleanup rules are now mirrored on the rewrite tree
   - the direct port now removes redundant `enable-background` attributes and their inline-style declaration form
   - style handling stays local to the plugin and does not yet force a broader css-tree rewrite surface
+- `feat: tighten direct-port script detection helpers`
+  - `lib/svgo/tools` now mirrors the upstream `hasScripts` checks for script content, javascript hrefs, and event attributes
+  - the cleanupIds deopt surface now has the minimum upstream-compatible foundation it expects
 - current topological follow-up after selector compat:
   - the next upstream-missing files are now dominated by the heavier cleanup/style and group-rewrite blocks
-  - the next reasonable direct-port jump is `cleanupIds` or a smaller structural block like `collapseGroups`
+  - `cleanupIds` is now the active next plugin port on top of the tightened script/reference helpers
   - selector coverage can remain minimal until a later plugin actually forces a broader surface
 
 ## Port Order

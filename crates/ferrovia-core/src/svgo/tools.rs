@@ -1,10 +1,26 @@
 use regex::Regex;
 
-use crate::plugins::_collections::is_reference_prop;
+use crate::plugins::_collections::{is_event_attr, is_reference_prop};
+use crate::types::XastElement;
 
 #[must_use]
-pub fn has_scripts(svg_name: &str) -> bool {
-    svg_name == "script"
+pub fn has_scripts(node: &XastElement) -> bool {
+    if node.name == "script" && !node.children.is_empty() {
+        return true;
+    }
+
+    if node.name == "a"
+        && node.attributes.iter().any(|attribute| {
+            (attribute.name == "href" || attribute.name.ends_with(":href"))
+                && attribute.value.trim_start().starts_with("javascript:")
+        })
+    {
+        return true;
+    }
+
+    node.attributes
+        .iter()
+        .any(|attribute| is_event_attr(attribute.name.as_str()))
 }
 
 #[must_use]
