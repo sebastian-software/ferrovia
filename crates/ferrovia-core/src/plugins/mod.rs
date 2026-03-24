@@ -20,9 +20,11 @@ pub mod remove_empty_containers;
 pub mod remove_empty_text;
 pub mod remove_metadata;
 pub mod remove_raster_images;
+pub mod remove_scripts;
 pub mod remove_style_element;
 pub mod remove_title;
 pub mod remove_xml_proc_inst;
+pub mod remove_xmlns;
 
 /// Apply one configured plugin to the xast root.
 ///
@@ -46,8 +48,10 @@ pub fn apply_plugin(root: &mut XastRoot, plugin: &PluginSpec) -> Result<()> {
         "removeEmptyText" => remove_empty_text::apply(root, plugin.params()),
         "removeMetadata" => remove_metadata::apply(root),
         "removeRasterImages" => remove_raster_images::apply(root),
+        "removeScripts" => remove_scripts::apply(root),
         "removeStyleElement" => remove_style_element::apply(root),
         "removeTitle" => remove_title::apply(root),
+        "removeXMLNS" => remove_xmlns::apply(root),
         "removeXMLProcInst" => remove_xml_proc_inst::apply(root),
         other => Err(FerroviaError::UnsupportedPlugin(other.to_string())),
     }

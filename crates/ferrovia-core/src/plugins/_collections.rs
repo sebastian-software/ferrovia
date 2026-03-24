@@ -72,6 +72,81 @@ const DEPRECATED_GROUP_PRESENTATION_UNSAFE: &[&str] = &[
     "glyph-orientation-vertical",
     "kerning",
 ];
+const ANIMATION_EVENT_ATTRS: &[&str] = &["onbegin", "onend", "onrepeat", "onload"];
+const DOCUMENT_EVENT_ATTRS: &[&str] = &[
+    "onabort", "onerror", "onresize", "onscroll", "onunload", "onzoom",
+];
+const DOCUMENT_ELEMENT_EVENT_ATTRS: &[&str] = &["oncopy", "oncut", "onpaste"];
+const GLOBAL_EVENT_ATTRS: &[&str] = &[
+    "oncancel",
+    "oncanplay",
+    "oncanplaythrough",
+    "onchange",
+    "onclick",
+    "onclose",
+    "oncuechange",
+    "ondblclick",
+    "ondrag",
+    "ondragend",
+    "ondragenter",
+    "ondragleave",
+    "ondragover",
+    "ondragstart",
+    "ondrop",
+    "ondurationchange",
+    "onemptied",
+    "onended",
+    "onerror",
+    "onfocus",
+    "oninput",
+    "oninvalid",
+    "onkeydown",
+    "onkeypress",
+    "onkeyup",
+    "onload",
+    "onloadeddata",
+    "onloadedmetadata",
+    "onloadstart",
+    "onmousedown",
+    "onmouseenter",
+    "onmouseleave",
+    "onmousemove",
+    "onmouseout",
+    "onmouseover",
+    "onmouseup",
+    "onmousewheel",
+    "onpause",
+    "onplay",
+    "onplaying",
+    "onprogress",
+    "onratechange",
+    "onreset",
+    "onresize",
+    "onscroll",
+    "onseeked",
+    "onseeking",
+    "onselect",
+    "onshow",
+    "onstalled",
+    "onsubmit",
+    "onsuspend",
+    "ontimeupdate",
+    "ontoggle",
+    "onvolumechange",
+    "onwaiting",
+];
+const GRAPHICAL_EVENT_ATTRS: &[&str] = &[
+    "onactivate",
+    "onclick",
+    "onfocusin",
+    "onfocusout",
+    "onload",
+    "onmousedown",
+    "onmousemove",
+    "onmouseout",
+    "onmouseover",
+    "onmouseup",
+];
 
 const ATTR_GROUPS_CORE_PRESENTATION: &[&str] = &[
     "conditionalProcessing",
@@ -226,4 +301,13 @@ pub fn deprecated_elem_config(name: &str) -> Option<ElementDeprecatedConfig> {
         }),
         _ => None,
     }
+}
+
+#[must_use]
+pub fn is_event_attr(name: &str) -> bool {
+    ANIMATION_EVENT_ATTRS.contains(&name)
+        || DOCUMENT_EVENT_ATTRS.contains(&name)
+        || DOCUMENT_ELEMENT_EVENT_ATTRS.contains(&name)
+        || GLOBAL_EVENT_ATTRS.contains(&name)
+        || GRAPHICAL_EVENT_ATTRS.contains(&name)
 }
