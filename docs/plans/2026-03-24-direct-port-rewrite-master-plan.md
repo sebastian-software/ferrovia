@@ -71,10 +71,13 @@ Rebuild `ferrovia-core` as a strict SVGO-shaped direct port while keeping the ou
   - `removeRasterImages`
   - `removeStyleElement`
   - both ports stay file-local and add no new shared rewrite surface
+- `feat: port direct-port removeDeprecatedAttrs`
+  - `_collections` now carries the first explicit deprecated-attribute group and element metadata needed by a style-aware cleanup port
+  - `removeDeprecatedAttrs` now mirrors the upstream special-case around `xml:lang`/`lang` and respects attribute selectors referenced from stylesheets
 - current topological follow-up after selector compat:
   - deepen selector coverage beyond the current minimal surface
   - port the next simple upstream cleanup plugins before the heavier style/geometry blocks
-  - likely next: `removeDeprecatedAttrs`, unless we deliberately keep extending the low-surface non-default cleanup tail first
+  - likely next: another lightweight structural port like `removeScripts`/`removeXMLNS`, or a deliberate widening step into heavier collections-driven plugins
 
 ## Port Order
 

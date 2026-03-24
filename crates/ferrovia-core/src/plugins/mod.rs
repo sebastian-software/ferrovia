@@ -9,6 +9,7 @@ pub mod apply_transforms;
 pub mod remove_attributes_by_selector;
 pub mod remove_attrs;
 pub mod remove_comments;
+pub mod remove_deprecated_attrs;
 pub mod remove_desc;
 pub mod remove_dimensions;
 pub mod remove_doctype;
@@ -33,6 +34,7 @@ pub fn apply_plugin(root: &mut XastRoot, plugin: &PluginSpec) -> Result<()> {
     match plugin.name() {
         "removeComments" => remove_comments::apply(root, plugin.params()),
         "removeDesc" => remove_desc::apply(root, plugin.params()),
+        "removeDeprecatedAttrs" => remove_deprecated_attrs::apply(root, plugin.params()),
         "removeDimensions" => remove_dimensions::apply(root),
         "removeAttributesBySelector" => remove_attributes_by_selector::apply(root, plugin.params()),
         "removeAttrs" => remove_attrs::apply(root, plugin.params()),
