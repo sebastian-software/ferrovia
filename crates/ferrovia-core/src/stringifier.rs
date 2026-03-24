@@ -1,15 +1,8 @@
+use crate::plugins::_collections::is_text_elem;
 use crate::types::{
     StringifyOptions, XastAttribute, XastCdata, XastChild, XastComment, XastDoctype, XastElement,
     XastInstruction, XastRoot, XastText,
 };
-
-const TEXT_ELEMS: &[&str] = &[
-    "text",
-    "tspan",
-    "tref",
-    "textPath",
-    "altGlyph",
-];
 
 #[must_use]
 pub fn stringify_svg(data: &XastRoot, user_options: Option<StringifyOptions>) -> String {
@@ -80,7 +73,7 @@ fn stringify_element(node: &XastElement, state: &State) -> String {
     }
 
     let mut next_state = state.clone();
-    if TEXT_ELEMS.contains(&node.name.as_str()) {
+    if is_text_elem(node.name.as_str()) {
         next_state.text_context = Some(node.name.clone());
     }
     next_state.indent_level += 1;

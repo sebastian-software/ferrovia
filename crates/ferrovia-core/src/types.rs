@@ -35,6 +35,12 @@ pub struct XastAttribute {
     pub value: String,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct PathDataItem {
+    pub command: char,
+    pub args: Vec<f64>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct XastElement {
     pub name: String,
@@ -71,6 +77,34 @@ pub enum XastNode<'a> {
 pub type StringifyOptions = Js2Svg;
 
 pub type AttributesMap = HashMap<String, String>;
+
+pub type Specificity = [u32; 4];
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StylesheetDeclaration {
+    pub name: String,
+    pub value: String,
+    pub important: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StylesheetRule {
+    pub selector: String,
+    pub dynamic: bool,
+    pub specificity: Specificity,
+    pub declarations: Vec<StylesheetDeclaration>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ComputedStyle {
+    Static { inherited: bool, value: String },
+    Dynamic { inherited: bool },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Stylesheet {
+    pub rules: Vec<StylesheetRule>,
+}
 
 impl XastRoot {
     #[must_use]

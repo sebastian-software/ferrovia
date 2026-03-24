@@ -28,6 +28,17 @@ Rebuild `ferrovia-core` as a strict SVGO-shaped direct port while keeping the ou
   - `removeTitle`
 - CLI and Node smoke fixtures remain green on the `remove-comments` oracle case
 
+## Current Progress
+
+- `refactor: reset core to direct-port rewrite scaffold`
+  - reset complete
+  - minimal rewrite path is green
+- current topological follow-up after reset:
+  - `plugins/_collections`
+  - `lib/path`
+  - `lib/style`
+  - additional `lib/svgo/tools` helpers for references and numeric/path formatting
+
 ## Port Order
 
 1. `lib/types`, `lib/util/visit`, `lib/util/map-nodes-to-parents`

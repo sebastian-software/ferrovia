@@ -1,18 +1,11 @@
 use ferrovia_sax_compat::{SaxEvent, parse as sax_parse};
 
 use crate::error::{FerroviaError, Result};
+use crate::plugins::_collections::is_text_elem;
 use crate::types::{
     XastAttribute, XastCdata, XastChild, XastComment, XastDoctype, XastElement, XastInstruction,
     XastRoot, XastText,
 };
-
-const TEXT_ELEMS: &[&str] = &[
-    "text",
-    "tspan",
-    "tref",
-    "textPath",
-    "altGlyph",
-];
 
 /// Parse an SVG string into the rewrite's xast-like tree.
 ///
@@ -84,7 +77,7 @@ pub fn parse_svg(data: &str, from: Option<&str>) -> Result<XastRoot> {
             SaxEvent::Text { value } => {
                 let in_text_context = stack
                     .last()
-                    .is_some_and(|element| TEXT_ELEMS.contains(&element.name.as_str()));
+                    .is_some_and(|element| is_text_elem(element.name.as_str()));
                 if in_text_context {
                     push_child(&mut root, &mut stack, XastChild::Text(XastText { value }));
                 } else {
