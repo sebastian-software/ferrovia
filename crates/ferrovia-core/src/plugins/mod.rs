@@ -23,6 +23,7 @@ pub mod remove_raster_images;
 pub mod remove_scripts;
 pub mod remove_style_element;
 pub mod remove_title;
+pub mod remove_unused_ns;
 pub mod remove_xml_proc_inst;
 pub mod remove_xmlns;
 
@@ -51,6 +52,7 @@ pub fn apply_plugin(root: &mut XastRoot, plugin: &PluginSpec) -> Result<()> {
         "removeScripts" => remove_scripts::apply(root),
         "removeStyleElement" => remove_style_element::apply(root),
         "removeTitle" => remove_title::apply(root),
+        "removeUnusedNS" => remove_unused_ns::apply(root),
         "removeXMLNS" => remove_xmlns::apply(root),
         "removeXMLProcInst" => remove_xml_proc_inst::apply(root),
         other => Err(FerroviaError::UnsupportedPlugin(other.to_string())),

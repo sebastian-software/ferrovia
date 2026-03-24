@@ -78,10 +78,12 @@ Rebuild `ferrovia-core` as a strict SVGO-shaped direct port while keeping the ou
   - `removeScripts`
   - `removeXMLNS`
   - `_collections` now carries the minimal event-attribute groups needed for script stripping
+- `feat: port direct-port removeUnusedNS`
+  - namespace cleanup now mirrors the upstream root-svg collection/removal flow for prefixed namespace declarations
 - current topological follow-up after selector compat:
   - deepen selector coverage beyond the current minimal surface
   - port the next simple upstream cleanup plugins before the heavier style/geometry blocks
-  - likely next: another low-surface cleanup port like `removeTitle`-adjacent utilities is already done, so the next real choice is either `removeXlink`/`removeUnusedNS` or a heavier geometry/style jump
+  - next: finish the namespace block with `removeXlink`
 
 ## Port Order
 
