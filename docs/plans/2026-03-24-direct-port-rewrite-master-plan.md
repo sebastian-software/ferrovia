@@ -40,9 +40,17 @@ Rebuild `ferrovia-core` as a strict SVGO-shaped direct port while keeping the ou
   - `plugins/_transforms`
   - `plugins/applyTransforms`
   - attribute helpers on xast nodes to keep the direct-port surface close to SVGO
-- current topological follow-up after helper plugins:
-  - deeper xast/query parity
-  - next plugin files in upstream order on top of the new helper layer
+- `feat: add direct-port xast query layer`
+  - `lib/xast` now supports a minimal real selector surface:
+    - tag selectors
+    - id selectors
+    - class selectors
+    - attribute presence/equality selectors
+    - descendant and child combinators
+  - `lib/svgo/css-select-adapter` now exposes parent, sibling, child, text, name, and attribute access over the rewrite xast tree
+- current topological follow-up after xast/query parity:
+  - deepen compat crates beyond stubs
+  - port next plugin files in upstream order on top of the helper and query layers
 
 ## Port Order
 
