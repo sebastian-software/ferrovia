@@ -2,12 +2,15 @@ use crate::config::PluginSpec;
 use crate::error::{FerroviaError, Result};
 use crate::types::XastRoot;
 
+pub mod _collections;
+pub mod _path;
+pub mod _transforms;
+pub mod apply_transforms;
 pub mod remove_comments;
 pub mod remove_doctype;
 pub mod remove_metadata;
 pub mod remove_title;
 pub mod remove_xml_proc_inst;
-pub mod _collections;
 
 /// Apply one configured plugin to the xast root.
 ///

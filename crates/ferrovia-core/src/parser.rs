@@ -43,11 +43,9 @@ pub fn parse_svg(data: &str, from: Option<&str>) -> Result<XastRoot> {
                     value: value.trim().to_string(),
                 }),
             ),
-            SaxEvent::Cdata { value } => push_child(
-                &mut root,
-                &mut stack,
-                XastChild::Cdata(XastCdata { value }),
-            ),
+            SaxEvent::Cdata { value } => {
+                push_child(&mut root, &mut stack, XastChild::Cdata(XastCdata { value }));
+            }
             SaxEvent::OpenTag {
                 name,
                 attributes,

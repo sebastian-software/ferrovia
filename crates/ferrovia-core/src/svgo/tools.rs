@@ -9,16 +9,14 @@ pub fn has_scripts(svg_name: &str) -> bool {
 
 #[must_use]
 pub fn preserve_comment(value: &str, patterns: &[String]) -> bool {
-    patterns.iter().any(|pattern| {
-        Regex::new(pattern)
-            .is_ok_and(|regex| regex.is_match(value))
-    })
+    patterns
+        .iter()
+        .any(|pattern| Regex::new(pattern).is_ok_and(|regex| regex.is_match(value)))
 }
 
 #[must_use]
 pub fn includes_url_reference(body: &str) -> bool {
-    Regex::new(r#"url\((?:"|')?#([^)"']+)(?:"|')?\)"#)
-        .is_ok_and(|regex| regex.is_match(body))
+    Regex::new(r#"url\((?:"|')?#([^)"']+)(?:"|')?\)"#).is_ok_and(|regex| regex.is_match(body))
 }
 
 #[must_use]
@@ -62,7 +60,9 @@ pub fn cleanup_out_data(data: &[f64], no_space_after_flags: bool) -> String {
         if no_space_after_flags && index > 0 && index % 7 == 5 {
             delimiter = "";
         }
-        if delimiter == " " && (*item < 0.0 || (item_str.starts_with('.') && previous.fract() != 0.0)) {
+        if delimiter == " "
+            && (*item < 0.0 || (item_str.starts_with('.') && previous.fract() != 0.0))
+        {
             delimiter = "";
         }
         out.push_str(delimiter);

@@ -6,6 +6,7 @@ use crate::types::{XastChild, XastRoot};
 ///
 /// This direct port currently does not return plugin-specific runtime errors.
 pub fn apply(root: &mut XastRoot) -> crate::error::Result<()> {
-    root.children.retain(|child| !matches!(child, XastChild::Doctype(_)));
+    root.children
+        .retain(|child| !matches!(child, XastChild::Doctype(_)));
     Ok(())
 }

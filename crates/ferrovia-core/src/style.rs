@@ -1,7 +1,7 @@
 use crate::plugins::_collections::is_presentation_attr;
 use crate::types::{
     ComputedStyle, Specificity, Stylesheet, StylesheetDeclaration, StylesheetRule, XastChild,
-    XastRoot,
+    XastElement, XastRoot,
 };
 
 #[must_use]
@@ -28,8 +28,51 @@ pub fn collect_stylesheet(root: &XastRoot) -> Stylesheet {
 }
 
 #[must_use]
-pub const fn compute_style(_stylesheet: &Stylesheet) -> Vec<(String, ComputedStyle)> {
-    Vec::new()
+pub fn compute_style(stylesheet: &Stylesheet, node: &XastElement) -> Vec<(String, ComputedStyle)> {
+    let mut computed = Vec::<(String, ComputedStyle)>::new();
+
+    for rule in &stylesheet.rules {
+        if selector_matches(node, rule.selector.as_str()) {
+            for declaration in &rule.declarations {
+                upsert_computed_style(
+                    &mut computed,
+                    declaration.name.as_str(),
+                    ComputedStyle::Static {
+                        inherited: false,
+                        value: declaration.value.clone(),
+                    },
+                );
+            }
+        }
+    }
+
+    if let Some(style) = node.get_attribute("style") {
+        for declaration in parse_style_declarations(style) {
+            upsert_computed_style(
+                &mut computed,
+                declaration.name.as_str(),
+                ComputedStyle::Static {
+                    inherited: false,
+                    value: declaration.value,
+                },
+            );
+        }
+    }
+
+    for attribute in &node.attributes {
+        if is_presentation_attr(attribute.name.as_str()) || attribute.name == "transform" {
+            upsert_computed_style(
+                &mut computed,
+                attribute.name.as_str(),
+                ComputedStyle::Static {
+                    inherited: false,
+                    value: attribute.value.clone(),
+                },
+            );
+        }
+    }
+
+    computed
 }
 
 #[must_use]
@@ -92,4 +135,37 @@ fn parse_stylesheet_rules(css: &str) -> Vec<StylesheetRule> {
             })
         })
         .collect()
+}
+
+fn upsert_computed_style(
+    computed: &mut Vec<(String, ComputedStyle)>,
+    name: &str,
+    value: ComputedStyle,
+) {
+    if let Some((_, existing)) = computed
+        .iter_mut()
+        .find(|(existing_name, _)| existing_name == name)
+    {
+        *existing = value;
+        return;
+    }
+    computed.push((name.to_string(), value));
+}
+
+fn selector_matches(node: &XastElement, selector: &str) -> bool {
+    let selector = selector.trim();
+    if selector.is_empty() {
+        return false;
+    }
+    if let Some(id) = selector.strip_prefix('#') {
+        return node.get_attribute("id").is_some_and(|value| value == id);
+    }
+    if let Some(class_name) = selector.strip_prefix('.') {
+        return node.get_attribute("class").is_some_and(|value| {
+            value
+                .split_ascii_whitespace()
+                .any(|item| item == class_name)
+        });
+    }
+    node.name == selector
 }

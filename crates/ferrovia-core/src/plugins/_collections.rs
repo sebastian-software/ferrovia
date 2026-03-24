@@ -1,10 +1,4 @@
-const TEXT_ELEMS: &[&str] = &[
-    "text",
-    "tspan",
-    "tref",
-    "textPath",
-    "altGlyph",
-];
+const TEXT_ELEMS: &[&str] = &["text", "tspan", "tref", "textPath", "altGlyph"];
 
 const REFERENCES_PROPS: &[&str] = &[
     "fill",

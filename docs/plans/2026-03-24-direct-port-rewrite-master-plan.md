@@ -33,11 +33,16 @@ Rebuild `ferrovia-core` as a strict SVGO-shaped direct port while keeping the ou
 - `refactor: reset core to direct-port rewrite scaffold`
   - reset complete
   - minimal rewrite path is green
-- current topological follow-up after reset:
-  - `plugins/_collections`
-  - `lib/path`
-  - `lib/style`
-  - additional `lib/svgo/tools` helpers for references and numeric/path formatting
+- `feat: add direct-port path style and tools modules`
+  - `lib/path`, `lib/style`, and additional `lib/svgo/tools` helpers in place
+- `feat: add direct-port helper plugin modules`
+  - `plugins/_path`
+  - `plugins/_transforms`
+  - `plugins/applyTransforms`
+  - attribute helpers on xast nodes to keep the direct-port surface close to SVGO
+- current topological follow-up after helper plugins:
+  - deeper xast/query parity
+  - next plugin files in upstream order on top of the new helper layer
 
 ## Port Order
 

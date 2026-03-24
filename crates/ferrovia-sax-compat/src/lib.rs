@@ -174,9 +174,7 @@ fn parse_tag(
             break;
         }
         let attr_start = cursor;
-        while cursor < bytes.len()
-            && !bytes[cursor].is_ascii_whitespace()
-            && bytes[cursor] != b'='
+        while cursor < bytes.len() && !bytes[cursor].is_ascii_whitespace() && bytes[cursor] != b'='
         {
             cursor += 1;
         }
