@@ -24,6 +24,7 @@ pub mod remove_scripts;
 pub mod remove_style_element;
 pub mod remove_title;
 pub mod remove_unused_ns;
+pub mod remove_view_box;
 pub mod remove_xlink;
 pub mod remove_xml_proc_inst;
 pub mod remove_xmlns;
@@ -55,6 +56,7 @@ pub fn apply_plugin(root: &mut XastRoot, plugin: &PluginSpec) -> Result<()> {
         "removeTitle" => remove_title::apply(root),
         "removeUnusedNS" => remove_unused_ns::apply(root),
         "removeXlink" => remove_xlink::apply(root, plugin.params()),
+        "removeViewBox" => remove_view_box::apply(root),
         "removeXMLNS" => remove_xmlns::apply(root),
         "removeXMLProcInst" => remove_xml_proc_inst::apply(root),
         other => Err(FerroviaError::UnsupportedPlugin(other.to_string())),
