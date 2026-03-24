@@ -1,0 +1,11 @@
+[package]
+name = "ferrovia-csso-compat"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Placeholder csso compatibility layer for the ferrovia SVGO direct port"
+
+[lints]
+workspace = true

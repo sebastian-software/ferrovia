@@ -1,16 +1,16 @@
 //! Core optimizer primitives for ferrovia.
 
-pub mod ast;
+pub mod builtin;
 pub mod config;
 pub mod error;
-pub mod geometry;
 pub mod optimize;
 pub mod parser;
 pub mod plugins;
-pub mod serializer;
-pub mod style;
-pub mod svgo_spike;
-pub mod xmltokenizer;
+pub mod stringifier;
+pub mod svgo;
+pub mod types;
+pub mod util;
+pub mod xast;
 
 pub use config::{Config, Js2Svg, PluginConfig, PluginSpec};
 pub use error::{FerroviaError, Result};

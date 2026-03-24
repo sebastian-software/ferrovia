@@ -8,7 +8,7 @@ pub type Result<T> = std::result::Result<T, FerroviaError>;
 pub enum FerroviaError {
     #[error("parse error at byte {position}: {message}")]
     Parse { position: usize, message: String },
-    #[error("unsupported plugin: {0}")]
+    #[error("unsupported plugin in direct-port rewrite: {0}")]
     UnsupportedPlugin(String),
     #[error("invalid configuration: {0}")]
     InvalidConfig(String),

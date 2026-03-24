@@ -1,0 +1,11 @@
+[package]
+name = "ferrovia-css-what-compat"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Placeholder css-what compatibility layer for the ferrovia SVGO direct port"
+
+[lints]
+workspace = true

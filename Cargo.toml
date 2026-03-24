@@ -3,6 +3,11 @@ members = [
   "crates/ferrovia-core",
   "crates/ferrovia-cli",
   "crates/ferrovia-napi",
+  "crates/ferrovia-sax-compat",
+  "crates/ferrovia-css-what-compat",
+  "crates/ferrovia-css-select-compat",
+  "crates/ferrovia-css-tree-compat",
+  "crates/ferrovia-csso-compat",
 ]
 resolver = "2"
 
@@ -21,9 +26,8 @@ napi-build = "2.1.5"
 napi-derive = "3.2.5"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
-svgtypes = "0.16.1"
 thiserror = "2.0.17"
-xmlparser = "0.13.6"
+regex = "1.12.2"
 
 [workspace.lints.clippy]
 all = "warn"
