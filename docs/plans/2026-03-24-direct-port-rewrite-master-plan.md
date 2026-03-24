@@ -57,9 +57,17 @@ Rebuild `ferrovia-core` as a strict SVGO-shaped direct port while keeping the ou
   - `removeAttrs` now mirrors the upstream pattern-driven attribute removal flow
   - `removeElementsByAttr` now mirrors the upstream id/class element pruning flow
   - query-driven cleanup plugins now cover selector, attribute, and id/class removal on the rewrite tree
+- `feat: port direct-port simple cleanup plugins`
+  - `removeDesc`
+  - `removeDimensions`
+  - `removeEditorsNSData`
+  - `removeEmptyAttrs`
+  - `removeEmptyText`
+  - `_collections` now carries the minimal editor namespace and conditional-processing sets needed by those ports
 - current topological follow-up after selector compat:
   - deepen selector coverage beyond the current minimal surface
   - port the next simple upstream cleanup plugins before the heavier style/geometry blocks
+  - likely next: `removeDeprecatedAttrs` or `removeEmptyContainers`, depending on which shared collections/style surface is cheaper to add without widening the rewrite tree too early
 
 ## Port Order
 

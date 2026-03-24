@@ -9,8 +9,13 @@ pub mod apply_transforms;
 pub mod remove_attributes_by_selector;
 pub mod remove_attrs;
 pub mod remove_comments;
+pub mod remove_desc;
+pub mod remove_dimensions;
 pub mod remove_doctype;
+pub mod remove_editors_ns_data;
 pub mod remove_elements_by_attr;
+pub mod remove_empty_attrs;
+pub mod remove_empty_text;
 pub mod remove_metadata;
 pub mod remove_title;
 pub mod remove_xml_proc_inst;
@@ -24,10 +29,15 @@ pub mod remove_xml_proc_inst;
 pub fn apply_plugin(root: &mut XastRoot, plugin: &PluginSpec) -> Result<()> {
     match plugin.name() {
         "removeComments" => remove_comments::apply(root, plugin.params()),
+        "removeDesc" => remove_desc::apply(root, plugin.params()),
+        "removeDimensions" => remove_dimensions::apply(root),
         "removeAttributesBySelector" => remove_attributes_by_selector::apply(root, plugin.params()),
         "removeAttrs" => remove_attrs::apply(root, plugin.params()),
         "removeDoctype" => remove_doctype::apply(root),
+        "removeEditorsNSData" => remove_editors_ns_data::apply(root, plugin.params()),
         "removeElementsByAttr" => remove_elements_by_attr::apply(root, plugin.params()),
+        "removeEmptyAttrs" => remove_empty_attrs::apply(root),
+        "removeEmptyText" => remove_empty_text::apply(root, plugin.params()),
         "removeMetadata" => remove_metadata::apply(root),
         "removeTitle" => remove_title::apply(root),
         "removeXMLProcInst" => remove_xml_proc_inst::apply(root),
