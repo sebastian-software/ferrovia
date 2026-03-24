@@ -84,10 +84,12 @@ Rebuild `ferrovia-core` as a strict SVGO-shaped direct port while keeping the ou
   - xlink cleanup now mirrors the upstream prefix-stack behavior, href/title/show conversion, and legacy-element deopt path
 - `feat: port direct-port removeViewBox`
   - the first viewBox cleanup port is now in place for `svg`/`symbol`/`pattern` with the upstream nested-svg guard
+- `feat: port direct-port removeOffCanvasPaths`
+  - the first geometry-aware canvas cleanup port is now in place with root-viewBox parsing, transform subtree deopt, and conservative path/viewBox intersection checks
 - current topological follow-up after selector compat:
   - deepen selector coverage beyond the current minimal surface
   - port the next simple upstream cleanup plugins before the heavier style/geometry blocks
-  - next: `removeOffCanvasPaths` as the first geometry-aware canvas cleanup port
+  - the next meaningful jump is now either broader geometry (`convertShapeToPath`/`convertEllipseToCircle`) or the heavier style/ID block
 
 ## Port Order
 
