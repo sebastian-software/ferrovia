@@ -117,10 +117,14 @@ Rebuild `ferrovia-core` as a strict SVGO-shaped direct port while keeping the ou
   - group-level transform lifting now mirrors the upstream guarded move onto path/text/group children
   - url-reference and child-id deopts are now enforced on the rewrite path
   - the collection surface now includes the upstream `pathElems` distinction needed by this transform rewrite
+- `feat: port direct-port moveElemsAttrsToGroup`
+  - common inheritable child attributes now hoist back onto `g` elements through the upstream-style post-order rewrite flow
+  - `transform` hoisting now respects the upstream deopts around all-path children, filter-like group attributes, and stylesheet presence
+  - the direct port now covers both directions of the paired group-attribute movement rewrites before entering the heavier style layer
 - current topological follow-up after selector compat:
   - the next upstream-missing files are now dominated by the heavier cleanup/style and group-rewrite blocks
-  - the next reasonable direct-port jump is now `moveElemsAttrsToGroup` or the broader style files such as `mergeStyles` / `inlineStyles`
-  - selector coverage can remain minimal until a later plugin actually forces a broader surface
+  - the next reasonable direct-port jump is now the broader style files such as `mergeStyles` / `inlineStyles`, or a smaller remaining group/cleanup block if it unlocks them
+  - selector coverage can remain minimal until a later style-oriented plugin actually forces a broader surface
 
 ## Port Order
 
