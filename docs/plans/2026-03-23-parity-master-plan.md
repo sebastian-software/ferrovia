@@ -4,6 +4,14 @@ Date: 2026-03-23
 Reference: `svgo@4.0.1`
 Status: Active
 
+## Strategy Note
+
+- As of 2026-03-24, this corpus-driven parity path is frozen as the stable control baseline for the semantic direct-port spike.
+- Stable control measurements at freeze time:
+  - `smoke-20`: `0 / 20`
+  - `sample-100`: `18 / 100`
+- New parity work for the spike should land on the dedicated spike branch and be evaluated against this document's baseline numbers before it is considered for the main strategy.
+
 ## Goal
 - Reach broad, measured parity with `svgo@4.0.1`, not only `preset-default` feature completeness.
 - Keep `preset-default` as the hard baseline while using real `svgo-test-suite` mismatches to drive the remaining work.
