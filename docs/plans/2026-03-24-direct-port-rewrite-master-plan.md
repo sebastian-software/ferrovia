@@ -86,10 +86,14 @@ Rebuild `ferrovia-core` as a strict SVGO-shaped direct port while keeping the ou
   - the first viewBox cleanup port is now in place for `svg`/`symbol`/`pattern` with the upstream nested-svg guard
 - `feat: port direct-port removeOffCanvasPaths`
   - the first geometry-aware canvas cleanup port is now in place with root-viewBox parsing, transform subtree deopt, and conservative path/viewBox intersection checks
+- `feat: port direct-port convertShapeToPath`
+  - the first geometry-conversion port is now in place for `rect`, `line`, `polyline`, and `polygon`
+  - optional arc conversion for `circle` and `ellipse` is now wired through the direct-port parameter surface
+  - direct-port geometry coverage now reaches beyond cleanup into shape-to-path rewriting without introducing a ferrovia-specific abstraction layer
 - current topological follow-up after selector compat:
-  - deepen selector coverage beyond the current minimal surface
-  - port the next simple upstream cleanup plugins before the heavier style/geometry blocks
-  - the next meaningful jump is now either broader geometry (`convertShapeToPath`/`convertEllipseToCircle`) or the heavier style/ID block
+  - stay on the geometry path and port `convertEllipseToCircle` next
+  - then decide whether to continue through geometry helpers or jump into the heavier style/ID block
+  - selector coverage can remain minimal until a later plugin actually forces a broader surface
 
 ## Port Order
 
