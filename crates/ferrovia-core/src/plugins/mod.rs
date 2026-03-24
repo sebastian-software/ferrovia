@@ -7,8 +7,10 @@ pub mod _path;
 pub mod _transforms;
 pub mod apply_transforms;
 pub mod remove_attributes_by_selector;
+pub mod remove_attrs;
 pub mod remove_comments;
 pub mod remove_doctype;
+pub mod remove_elements_by_attr;
 pub mod remove_metadata;
 pub mod remove_title;
 pub mod remove_xml_proc_inst;
@@ -23,7 +25,9 @@ pub fn apply_plugin(root: &mut XastRoot, plugin: &PluginSpec) -> Result<()> {
     match plugin.name() {
         "removeComments" => remove_comments::apply(root, plugin.params()),
         "removeAttributesBySelector" => remove_attributes_by_selector::apply(root, plugin.params()),
+        "removeAttrs" => remove_attrs::apply(root, plugin.params()),
         "removeDoctype" => remove_doctype::apply(root),
+        "removeElementsByAttr" => remove_elements_by_attr::apply(root, plugin.params()),
         "removeMetadata" => remove_metadata::apply(root),
         "removeTitle" => remove_title::apply(root),
         "removeXMLProcInst" => remove_xml_proc_inst::apply(root),

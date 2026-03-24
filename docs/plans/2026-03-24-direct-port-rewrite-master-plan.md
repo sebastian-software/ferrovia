@@ -53,9 +53,13 @@ Rebuild `ferrovia-core` as a strict SVGO-shaped direct port while keeping the ou
   - `ferrovia-css-select-compat` now runs selector matching through a small adapter trait
   - `lib/xast` delegates selector parsing and matching to the compat crates
   - `removeAttributesBySelector` is now ported against that path
+- `feat: port direct-port attribute cleanup plugins`
+  - `removeAttrs` now mirrors the upstream pattern-driven attribute removal flow
+  - `removeElementsByAttr` now mirrors the upstream id/class element pruning flow
+  - query-driven cleanup plugins now cover selector, attribute, and id/class removal on the rewrite tree
 - current topological follow-up after selector compat:
   - deepen selector coverage beyond the current minimal surface
-  - port the next upstream plugins that depend on query traversal, likely `removeAttrs`, `removeElementsByAttr`, or `convertOneStopGradients`
+  - port the next simple upstream cleanup plugins before the heavier style/geometry blocks
 
 ## Port Order
 
