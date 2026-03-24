@@ -7,6 +7,7 @@ pub mod _path;
 pub mod _transforms;
 pub mod apply_transforms;
 pub mod cleanup_attrs;
+pub mod cleanup_enable_background;
 pub mod convert_ellipse_to_circle;
 pub mod convert_shape_to_path;
 pub mod remove_attributes_by_selector;
@@ -42,6 +43,7 @@ pub mod remove_xmlns;
 pub fn apply_plugin(root: &mut XastRoot, plugin: &PluginSpec) -> Result<()> {
     match plugin.name() {
         "cleanupAttrs" => cleanup_attrs::apply(root, plugin.params()),
+        "cleanupEnableBackground" => cleanup_enable_background::apply(root),
         "convertEllipseToCircle" => convert_ellipse_to_circle::apply(root),
         "convertShapeToPath" => convert_shape_to_path::apply(root, plugin.params()),
         "removeComments" => remove_comments::apply(root, plugin.params()),

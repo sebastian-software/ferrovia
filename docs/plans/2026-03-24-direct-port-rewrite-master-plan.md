@@ -98,9 +98,13 @@ Rebuild `ferrovia-core` as a strict SVGO-shaped direct port while keeping the ou
   - attribute value cleanup now mirrors the upstream newline, trim, and repeated-space pass
   - the direct port preserves the upstream parameter surface: `newlines`, `trim`, and `spaces`
   - recursive attribute cleanup is now covered without adding any new shared rewrite abstraction
+- `feat: port direct-port cleanupEnableBackground`
+  - root filter detection plus the `svg`/`mask`/`pattern` cleanup rules are now mirrored on the rewrite tree
+  - the direct port now removes redundant `enable-background` attributes and their inline-style declaration form
+  - style handling stays local to the plugin and does not yet force a broader css-tree rewrite surface
 - current topological follow-up after selector compat:
-  - the next upstream-missing files are now mostly the heavier cleanup/style and group-rewrite blocks
-  - the next reasonable direct-port jump is `cleanupEnableBackground` or a deliberate move into the heavier style/ID block around `cleanupIds`
+  - the next upstream-missing files are now dominated by the heavier cleanup/style and group-rewrite blocks
+  - the next reasonable direct-port jump is `cleanupIds` or a smaller structural block like `collapseGroups`
   - selector coverage can remain minimal until a later plugin actually forces a broader surface
 
 ## Port Order
