@@ -61,6 +61,62 @@ const CONTAINER_ELEMS: &[&str] = &[
     "symbol",
 ];
 
+const ANIMATION_ELEMS: &[&str] = &[
+    "animate",
+    "animateColor",
+    "animateMotion",
+    "animateTransform",
+    "set",
+];
+
+const INHERITABLE_ATTRS: &[&str] = &[
+    "clip-rule",
+    "color-interpolation-filters",
+    "color-interpolation",
+    "color-profile",
+    "color-rendering",
+    "color",
+    "cursor",
+    "direction",
+    "dominant-baseline",
+    "fill-opacity",
+    "fill-rule",
+    "fill",
+    "font-family",
+    "font-size-adjust",
+    "font-size",
+    "font-stretch",
+    "font-style",
+    "font-variant",
+    "font-weight",
+    "font",
+    "glyph-orientation-horizontal",
+    "glyph-orientation-vertical",
+    "image-rendering",
+    "letter-spacing",
+    "marker-end",
+    "marker-mid",
+    "marker-start",
+    "marker",
+    "paint-order",
+    "pointer-events",
+    "shape-rendering",
+    "stroke-dasharray",
+    "stroke-dashoffset",
+    "stroke-linecap",
+    "stroke-linejoin",
+    "stroke-miterlimit",
+    "stroke-opacity",
+    "stroke-width",
+    "stroke",
+    "text-anchor",
+    "text-rendering",
+    "transform",
+    "visibility",
+    "word-spacing",
+    "writing-mode",
+];
+
 const DEPRECATED_GROUP_ANIMATION_ATTRIBUTE_TARGET_UNSAFE: &[&str] = &["attributeType"];
 const DEPRECATED_GROUP_CONDITIONAL_PROCESSING_UNSAFE: &[&str] = &["requiredFeatures"];
 const DEPRECATED_GROUP_CORE_UNSAFE: &[&str] = &["xml:base", "xml:lang", "xml:space"];
@@ -209,6 +265,16 @@ pub fn is_conditional_processing_attr(name: &str) -> bool {
 #[must_use]
 pub fn is_container_elem(name: &str) -> bool {
     CONTAINER_ELEMS.contains(&name)
+}
+
+#[must_use]
+pub fn is_animation_elem(name: &str) -> bool {
+    ANIMATION_ELEMS.contains(&name)
+}
+
+#[must_use]
+pub fn is_inheritable_attr(name: &str) -> bool {
+    INHERITABLE_ATTRS.contains(&name)
 }
 
 #[must_use]

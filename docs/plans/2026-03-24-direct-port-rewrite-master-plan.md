@@ -109,9 +109,13 @@ Rebuild `ferrovia-core` as a strict SVGO-shaped direct port while keeping the ou
   - the rewrite tree now mirrors the upstream duplicate-id cleanup, unused-id removal, and referenced-id minification flow
   - reference rewrites now cover `href`, `url(#...)`, and SMIL `begin` patterns on the direct-port path
   - the upstream deopt around embedded styles and scripts is now enforced on the rewrite path
+- `feat: port direct-port collapseGroups`
+  - post-order group collapsing now mirrors the upstream exit-phase behavior on the rewrite tree
+  - the direct port now covers attribute migration into a single child, animation-aware deopts, and empty-group splicing
+  - the minimal collection surface now includes animation elements and inheritable attributes needed by this rewrite block
 - current topological follow-up after selector compat:
   - the next upstream-missing files are now dominated by the heavier cleanup/style and group-rewrite blocks
-  - the next reasonable direct-port jump is now structural rewrite territory like `collapseGroups` or a broader style file such as `mergeStyles`/`inlineStyles`
+  - the next reasonable direct-port jump is now another structural rewrite block like `moveGroupAttrsToElems` / `moveElemsAttrsToGroup` or the broader style files such as `mergeStyles` / `inlineStyles`
   - selector coverage can remain minimal until a later plugin actually forces a broader surface
 
 ## Port Order
