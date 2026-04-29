@@ -16,7 +16,7 @@ authors = ["Sebastian Software GmbH, Mainz, Germany"]
 [workspace.dependencies]
 simplecss = "0.2.2"
 memchr = "2.7.4"
-napi = { version = "3.3.0", default-features = false, features = ["napi9", "serde-json"] }
+napi = { version = "3.8.6", default-features = false, features = ["napi9", "serde-json"] }
 napi-build = "2.1.5"
 napi-derive = "3.2.5"
 serde = { version = "1.0.228", features = ["derive"] }
