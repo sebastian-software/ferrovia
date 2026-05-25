@@ -20,7 +20,7 @@ napi = { version = "3.3.0", default-features = false, features = ["napi9", "serd
 napi-build = "2.1.5"
 napi-derive = "3.2.5"
 serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.145"
+serde_json = "1.0.150"
 svgtypes = "0.16.1"
 thiserror = "2.0.17"
 xmlparser = "0.13.6"
