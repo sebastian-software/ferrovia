@@ -93,7 +93,8 @@ impl<'a> Parser<'a> {
 
             let text = self.parse_text();
             if !text.is_empty()
-                && (!text.trim().is_empty() || should_preserve_whitespace_text(self.doc.node(parent)))
+                && (!text.trim().is_empty()
+                    || should_preserve_whitespace_text(self.doc.node(parent)))
             {
                 self.doc.append_child(parent, NodeKind::Text(text));
             }

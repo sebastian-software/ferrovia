@@ -28,7 +28,10 @@ fn optional_svg_corpus_matches_svgo_preset_default() {
         return;
     };
     if !corpus_dir.exists() {
-        eprintln!("skipping optional corpus test because corpus dir does not exist: {}", corpus_dir.display());
+        eprintln!(
+            "skipping optional corpus test because corpus dir does not exist: {}",
+            corpus_dir.display()
+        );
         return;
     }
 
@@ -42,7 +45,10 @@ fn optional_svg_corpus_matches_svgo_preset_default() {
         fixtures.truncate(limit);
     }
     if fixtures.is_empty() {
-        eprintln!("skipping optional corpus test because no .svg files were found in {}", corpus_dir.display());
+        eprintln!(
+            "skipping optional corpus test because no .svg files were found in {}",
+            corpus_dir.display()
+        );
         return;
     }
 
@@ -56,14 +62,20 @@ fn optional_svg_corpus_matches_svgo_preset_default() {
         let svg = match fs::read_to_string(svg_path) {
             Ok(svg) => svg,
             Err(error) => {
-                mismatches.push(format!("{}: failed to read fixture: {error}", svg_path.display()));
+                mismatches.push(format!(
+                    "{}: failed to read fixture: {error}",
+                    svg_path.display()
+                ));
                 continue;
             }
         };
         let actual = match optimize(&svg, &config) {
             Ok(result) => normalize(&result.data),
             Err(error) => {
-                mismatches.push(format!("{}: ferrovia optimize failed: {error}", svg_path.display()));
+                mismatches.push(format!(
+                    "{}: ferrovia optimize failed: {error}",
+                    svg_path.display()
+                ));
                 continue;
             }
         };
@@ -100,7 +112,10 @@ fn collect_svg_files(dir: &Path, files: &mut Vec<PathBuf>) {
         let path = entry.path();
         if path.is_dir() {
             collect_svg_files(path.as_path(), files);
-        } else if path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("svg")) {
+        } else if path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("svg"))
+        {
             files.push(path);
         }
     }

@@ -17,3 +17,5 @@ This directory captures the current ferrovia decisions in descending importance.
 - `0011` minimal css stylesheet model
 
 New ADRs should continue the numeric sequence. If a later decision supersedes an older one, add a new ADR and link back to the superseded document instead of rewriting history.
+
+- [README theme composition](readme-theme-composition.md)

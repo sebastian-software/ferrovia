@@ -120,7 +120,11 @@ fn should_serialize_node(doc: &Document, id: NodeId) -> bool {
     }
 }
 
-fn normalized_text_for_context<'a>(doc: &'a Document, id: NodeId, text: &'a str) -> Option<Cow<'a, str>> {
+fn normalized_text_for_context<'a>(
+    doc: &'a Document,
+    id: NodeId,
+    text: &'a str,
+) -> Option<Cow<'a, str>> {
     if text.trim().is_empty() && !should_preserve_whitespace_text(doc, id) {
         return None;
     }
@@ -170,9 +174,8 @@ fn should_trim_mixed_text_indentation(doc: &Document, id: NodeId, text: &str) ->
         return false;
     }
 
-    doc.children(parent_id).any(|child_id| {
-        child_id != id && matches!(doc.node(child_id).kind, NodeKind::Element(_))
-    })
+    doc.children(parent_id)
+        .any(|child_id| child_id != id && matches!(doc.node(child_id).kind, NodeKind::Element(_)))
 }
 
 fn serialize_attribute(attribute: &Attribute, out: &mut String) {
@@ -218,7 +221,10 @@ fn is_entity_reference(value: &str) -> bool {
     if value.is_empty() {
         return false;
     }
-    if let Some(rest) = value.strip_prefix("#x").or_else(|| value.strip_prefix("#X")) {
+    if let Some(rest) = value
+        .strip_prefix("#x")
+        .or_else(|| value.strip_prefix("#X"))
+    {
         return !rest.is_empty() && rest.chars().all(|ch| ch.is_ascii_hexdigit());
     }
     if let Some(rest) = value.strip_prefix('#') {

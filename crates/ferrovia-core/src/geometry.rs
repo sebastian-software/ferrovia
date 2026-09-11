@@ -98,7 +98,11 @@ pub enum TransformOperation {
 
 pub(crate) fn parse_path_commands(input: &str) -> std::result::Result<Vec<PathCommand>, String> {
     PathParser::from(input)
-        .map(|segment| segment.map(PathCommand::from).map_err(|error| error.to_string()))
+        .map(|segment| {
+            segment
+                .map(PathCommand::from)
+                .map_err(|error| error.to_string())
+        })
         .collect()
 }
 
@@ -201,7 +205,10 @@ mod tests {
                     y: 10.0,
                 },
                 PathCommand::HorizontalLineTo { abs: false, x: 5.0 },
-                PathCommand::VerticalLineTo { abs: false, y: -2.0 },
+                PathCommand::VerticalLineTo {
+                    abs: false,
+                    y: -2.0
+                },
                 PathCommand::EllipticalArc {
                     abs: false,
                     rx: 4.0,

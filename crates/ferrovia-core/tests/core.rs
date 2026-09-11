@@ -33,7 +33,8 @@ fn serializer_canonicalizes_attribute_quotes_to_double_quotes() {
 
 #[test]
 fn serializer_escapes_double_quotes_inside_attribute_values() {
-    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><rect class='a"b' width="1" height="1"/></svg>"#;
+    let svg =
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><rect class='a"b' width="1" height="1"/></svg>"#;
     let result = optimize(svg, &Config::default()).expect("optimize");
     assert_eq!(
         result.data,
@@ -563,7 +564,10 @@ fn preset_default_drops_unused_style_scaffold_and_root_defaults() {
     };
 
     let result = optimize(svg, &config).expect("optimize");
-    assert_eq!(result.data, r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"/>"#);
+    assert_eq!(
+        result.data,
+        r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"/>"#
+    );
 }
 
 #[test]
@@ -861,7 +865,8 @@ fn remove_unknowns_and_defaults_preserves_foreign_object_subtree_and_data_attrs(
 }
 
 #[test]
-fn remove_unknowns_and_defaults_strips_unknown_unprefixed_children_from_foreign_description_nodes() {
+fn remove_unknowns_and_defaults_strips_unknown_unprefixed_children_from_foreign_description_nodes()
+{
     let svg = concat!(
         r#"<svg xmlns="http://www.w3.org/2000/svg">"#,
         r#"<d:SVGTestCase xmlns:d="http://www.w3.org/2000/02/svg/testsuite/description/">"#,
@@ -1059,7 +1064,8 @@ fn convert_path_data_preserves_repeated_commands_when_marker_mid_matches_stylesh
 
 #[test]
 fn convert_path_data_utilizes_absolute_when_shorter() {
-    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0 L10 0 L10 10 L0 10 Z"/></svg>"#;
+    let svg =
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0 L10 0 L10 10 L0 10 Z"/></svg>"#;
     let config = Config {
         plugins: vec![PluginSpec::Name("convertPathData".to_string())],
         ..Config::default()
@@ -1104,8 +1110,7 @@ fn convert_path_data_uses_smooth_curve_shorthand_when_first_control_is_current_p
 
 #[test]
 fn convert_path_data_compacts_repeated_curve_commands_into_single_run() {
-    let svg =
-        r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0c10 0 20 0 30 0c10 0 20 0 30 0"/></svg>"#;
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0c10 0 20 0 30 0c10 0 20 0 30 0"/></svg>"#;
     let config = Config {
         plugins: vec![PluginSpec::Name("convertPathData".to_string())],
         ..Config::default()

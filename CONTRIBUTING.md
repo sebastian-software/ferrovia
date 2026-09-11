@@ -49,3 +49,6 @@ pnpm test:node
 - Explain user-visible or compatibility-relevant behavior changes clearly.
 - Call out any known deviations from upstream SVGO.
 - Include follow-up items when a change is intentionally partial.
+
+For the generated project README, see [README themes](docs/readme-theme.md).
+Edit `README.md.src`, then run `mise run readme:write`.
