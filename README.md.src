@@ -1,5 +1,8 @@
 # ferrovia
 
+<!-- mdtheme:badges:start -->
+<!-- mdtheme:badges:end -->
+
 `ferrovia` is a SVGO-compatible SVG optimizer written in Rust.
 
 Project homepage: [oss.sebastian-software.com](https://oss.sebastian-software.com)
