@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 
-use simplecss::{AttributeOperator, DeclarationTokenizer, Element as SimpleCssElement, PseudoClass};
+use simplecss::{
+    AttributeOperator, DeclarationTokenizer, Element as SimpleCssElement, PseudoClass,
+};
 
 use crate::ast::{Attribute, Document, NodeId, NodeKind};
 
@@ -125,7 +127,9 @@ pub(crate) fn serialize_css_rules(rules: &[CssRule]) -> String {
             serialized.push_str("@media ");
             serialized.push_str(media_query.as_str());
             serialized.push('{');
-            while index < rules.len() && rules[index].media_query.as_deref() == Some(media_query.as_str()) {
+            while index < rules.len()
+                && rules[index].media_query.as_deref() == Some(media_query.as_str())
+            {
                 serialize_css_rule(&mut serialized, &rules[index]);
                 index += 1;
             }
@@ -278,7 +282,8 @@ impl SimpleCssElement for SimpleCssNode<'_> {
             return false;
         };
         element.attributes.iter().any(|attribute| {
-            local_name(attribute.name.as_str()) == name && operator.matches(attribute.value.as_str())
+            local_name(attribute.name.as_str()) == name
+                && operator.matches(attribute.value.as_str())
         })
     }
 
@@ -327,7 +332,7 @@ fn parse_css_rules_in_media(css: &str, media_query: &str) -> Vec<CssRule> {
         .collect()
 }
 
-fn skip_css_whitespace(css: &str, index: &mut usize) {
+const fn skip_css_whitespace(css: &str, index: &mut usize) {
     while *index < css.len() && css.as_bytes()[*index].is_ascii_whitespace() {
         *index += 1;
     }
@@ -448,9 +453,7 @@ fn serialize_css_rule(serialized: &mut String, rule: &CssRule) {
     }
     serialized.push_str(rule.selectors.join(",").as_str());
     serialized.push('{');
-    serialized.push_str(
-        serialize_minified_style_declarations(&rule.declarations).as_str(),
-    );
+    serialized.push_str(serialize_minified_style_declarations(&rule.declarations).as_str());
     serialized.push('}');
 }
 
@@ -506,9 +509,8 @@ mod tests {
 
     #[test]
     fn parses_inline_style_with_important_values() {
-        let declarations = parse_style_declarations(
-            "fill: red; stroke-width:2!important; opacity: 0.5",
-        );
+        let declarations =
+            parse_style_declarations("fill: red; stroke-width:2!important; opacity: 0.5");
         assert_eq!(declarations.len(), 3);
         assert_eq!(declarations[0].name, "fill");
         assert_eq!(declarations[1].name, "stroke-width");
@@ -538,10 +540,22 @@ mod tests {
         let g_id = doc.children(svg_id).next().expect("group");
         let path_ids: Vec<_> = doc.children(g_id).collect();
 
-        assert!(selector_matches(&doc, path_ids[0], "g.notice > path[stroke='red']"));
+        assert!(selector_matches(
+            &doc,
+            path_ids[0],
+            "g.notice > path[stroke='red']"
+        ));
         assert!(selector_matches(&doc, path_ids[0], "#hero"));
-        assert!(selector_matches(&doc, path_ids[0], "g:lang(en) > path:first-child"));
-        assert!(!selector_matches(&doc, path_ids[1], "g:lang(de) > path:first-child"));
+        assert!(selector_matches(
+            &doc,
+            path_ids[0],
+            "g:lang(en) > path:first-child"
+        ));
+        assert!(!selector_matches(
+            &doc,
+            path_ids[1],
+            "g:lang(de) > path:first-child"
+        ));
     }
 
     #[test]
@@ -550,7 +564,10 @@ mod tests {
             "rect, path { fill: red; stroke-width: 2 } @media screen { #hero { opacity: 1 } }",
         );
         assert_eq!(rules.len(), 2);
-        assert_eq!(rules[0].selectors, vec!["rect".to_string(), "path".to_string()]);
+        assert_eq!(
+            rules[0].selectors,
+            vec!["rect".to_string(), "path".to_string()]
+        );
         assert_eq!(rules[1].media_query.as_deref(), Some("screen"));
         assert_eq!(rules[1].selectors, vec!["#hero".to_string()]);
     }
@@ -560,9 +577,6 @@ mod tests {
         let css = "rect { fill: red } @media screen { #hero { opacity: 1 } }";
         let parsed = parse_css_rules(css);
         let expected = concat!("rect{fill:red}", "@media screen{#hero{opacity:1}}");
-        assert_eq!(
-            serialize_css_rules(&parsed),
-            expected
-        );
+        assert_eq!(serialize_css_rules(&parsed), expected);
     }
 }

@@ -16,4 +16,6 @@ This directory captures the current ferrovia decisions in descending importance.
 - `0010` dependency leverage and OSS adoption
 - `0011` minimal css stylesheet model
 
-New ADRs should continue the numeric sequence. If a later decision supersedes an older one, add a new ADR and link back to the superseded document instead of rewriting history.
+New ADRs should continue the numeric sequence. ADRs are living decisions: update their current contract in place; Git history records earlier wording.
+
+- `0012` [README theme composition](0012-readme-theme-composition.md)

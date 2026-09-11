@@ -7,7 +7,9 @@ use svgtypes::Color;
 use crate::ast::{Attribute, Document, NodeKind, QuoteStyle};
 use crate::config::{Config, PluginSpec};
 use crate::error::{FerroviaError, Result};
-use crate::geometry::{PathCommand, TransformOperation, parse_path_commands, parse_transform_operations};
+use crate::geometry::{
+    PathCommand, TransformOperation, parse_path_commands, parse_transform_operations,
+};
 use crate::style::{
     CssRule, StyleDeclaration, StylesheetRule, dedupe_declarations, parse_css_rules,
     parse_style_declarations, parse_stylesheet_rules, remove_declarations, selector_matches,
@@ -462,7 +464,10 @@ fn parse_numeric_value(value: &str) -> Option<(f64, &str)> {
     }
     let number = value[..index].parse::<f64>().ok()?;
     let unit = &value[index..];
-    if !matches!(unit, "" | "%" | "px" | "pt" | "pc" | "mm" | "cm" | "m" | "in" | "ft" | "em" | "ex") {
+    if !matches!(
+        unit,
+        "" | "%" | "px" | "pt" | "pc" | "mm" | "cm" | "m" | "in" | "ft" | "em" | "ex"
+    ) {
         return None;
     }
     Some((number, unit))
@@ -693,10 +698,14 @@ fn line_to_path(
     params: ConvertShapeToPathParams,
 ) -> Option<ShapePathRewrite> {
     let element = element?;
-    let x1 = parse_plain_number(attribute_value(element.attributes.as_slice(), "x1").unwrap_or("0"))?;
-    let y1 = parse_plain_number(attribute_value(element.attributes.as_slice(), "y1").unwrap_or("0"))?;
-    let x2 = parse_plain_number(attribute_value(element.attributes.as_slice(), "x2").unwrap_or("0"))?;
-    let y2 = parse_plain_number(attribute_value(element.attributes.as_slice(), "y2").unwrap_or("0"))?;
+    let x1 =
+        parse_plain_number(attribute_value(element.attributes.as_slice(), "x1").unwrap_or("0"))?;
+    let y1 =
+        parse_plain_number(attribute_value(element.attributes.as_slice(), "y1").unwrap_or("0"))?;
+    let x2 =
+        parse_plain_number(attribute_value(element.attributes.as_slice(), "x2").unwrap_or("0"))?;
+    let y2 =
+        parse_plain_number(attribute_value(element.attributes.as_slice(), "y2").unwrap_or("0"))?;
     Some(ShapePathRewrite::Replace(stringify_shape_path_data(
         &[
             ShapePathItem::new('M', vec![x1, y1]),
@@ -743,8 +752,10 @@ fn circle_to_path(
     params: ConvertShapeToPathParams,
 ) -> Option<ShapePathRewrite> {
     let element = element?;
-    let cx = parse_plain_number(attribute_value(element.attributes.as_slice(), "cx").unwrap_or("0"))?;
-    let cy = parse_plain_number(attribute_value(element.attributes.as_slice(), "cy").unwrap_or("0"))?;
+    let cx =
+        parse_plain_number(attribute_value(element.attributes.as_slice(), "cx").unwrap_or("0"))?;
+    let cy =
+        parse_plain_number(attribute_value(element.attributes.as_slice(), "cy").unwrap_or("0"))?;
     let r = parse_plain_number(attribute_value(element.attributes.as_slice(), "r").unwrap_or("0"))?;
     Some(ShapePathRewrite::Replace(stringify_shape_path_data(
         &[
@@ -763,10 +774,14 @@ fn ellipse_to_path(
     params: ConvertShapeToPathParams,
 ) -> Option<ShapePathRewrite> {
     let element = element?;
-    let cx = parse_plain_number(attribute_value(element.attributes.as_slice(), "cx").unwrap_or("0"))?;
-    let cy = parse_plain_number(attribute_value(element.attributes.as_slice(), "cy").unwrap_or("0"))?;
-    let rx = parse_plain_number(attribute_value(element.attributes.as_slice(), "rx").unwrap_or("0"))?;
-    let ry = parse_plain_number(attribute_value(element.attributes.as_slice(), "ry").unwrap_or("0"))?;
+    let cx =
+        parse_plain_number(attribute_value(element.attributes.as_slice(), "cx").unwrap_or("0"))?;
+    let cy =
+        parse_plain_number(attribute_value(element.attributes.as_slice(), "cy").unwrap_or("0"))?;
+    let rx =
+        parse_plain_number(attribute_value(element.attributes.as_slice(), "rx").unwrap_or("0"))?;
+    let ry =
+        parse_plain_number(attribute_value(element.attributes.as_slice(), "ry").unwrap_or("0"))?;
     Some(ShapePathRewrite::Replace(stringify_shape_path_data(
         &[
             ShapePathItem::new('M', vec![cx, cy - ry]),
@@ -804,7 +819,12 @@ fn stringify_shape_path_data(
         return format!(
             "{}{}",
             item.command,
-            stringify_shape_args(item.command, &item.args, precision, disable_space_after_flags)
+            stringify_shape_args(
+                item.command,
+                &item.args,
+                precision,
+                disable_space_after_flags
+            )
         );
     }
 
@@ -1260,13 +1280,23 @@ fn define_transform_precision(
         params.transform_precision = params.transform_precision.min(matrix_precision);
         number_of_digits = matrix_values
             .iter()
-            .map(|value| value.to_string().chars().filter(|ch| ch.is_ascii_digit()).count())
+            .map(|value| {
+                value
+                    .to_string()
+                    .chars()
+                    .filter(|ch| ch.is_ascii_digit())
+                    .count()
+            })
             .max()
             .unwrap_or(params.transform_precision);
     }
 
     if params.deg_precision.is_none() {
-        params.deg_precision = Some(params.float_precision.min(number_of_digits.saturating_sub(2)));
+        params.deg_precision = Some(
+            params
+                .float_precision
+                .min(number_of_digits.saturating_sub(2)),
+        );
     }
 
     params
@@ -1274,7 +1304,8 @@ fn define_transform_precision(
 
 fn float_digits(value: f64) -> usize {
     let text = value.to_string();
-    text.split_once('.').map_or(0, |(_, fraction)| fraction.len())
+    text.split_once('.')
+        .map_or(0, |(_, fraction)| fraction.len())
 }
 
 #[expect(
@@ -1601,8 +1632,7 @@ fn decompose_qrcd(matrix: &TransformItem) -> Option<Vec<TransformItem>> {
         });
     }
 
-    let radians =
-        std::f64::consts::FRAC_PI_2 - if d < 0.0 { -1.0 } else { 1.0 } * (-c / s).acos();
+    let radians = std::f64::consts::FRAC_PI_2 - if d < 0.0 { -1.0 } else { 1.0 } * (-c / s).acos();
     decomposition.push(TransformItem {
         name: "rotate",
         data: vec![radians_to_degrees(radians), 0.0, 0.0],
@@ -1839,8 +1869,7 @@ fn cleanup_out_data(data: &[f64], params: ConvertTransformParams) -> String {
         if params.negative_extra_space
             && !delimiter.is_empty()
             && (value < 0.0
-                || (item.starts_with('.')
-                    && previous.is_some_and(|prev: f64| prev.fract() != 0.0)))
+                || (item.starts_with('.') && previous.is_some_and(|prev: f64| prev.fract() != 0.0)))
         {
             delimiter = "";
         }
@@ -1972,7 +2001,9 @@ fn convert_path_data(doc: &mut Document, params: Option<&Value>) {
             attribute.value = serialize_path_items(&items, params, !has_marker_mid);
         }
         if baked_transform {
-            element.attributes.retain(|attribute| attribute.name != "transform");
+            element
+                .attributes
+                .retain(|attribute| attribute.name != "transform");
         }
     }
 }
@@ -2006,7 +2037,11 @@ fn collect_marker_mid_rules(doc: &Document) -> Vec<String> {
             selectors.extend(
                 parse_stylesheet_rules(text)
                     .into_iter()
-                    .filter(|rule| rule.declarations.iter().any(|decl| decl.name == "marker-mid"))
+                    .filter(|rule| {
+                        rule.declarations
+                            .iter()
+                            .any(|decl| decl.name == "marker-mid")
+                    })
                     .map(|rule| rule.selector),
             );
         }
@@ -2034,10 +2069,7 @@ fn parse_path_items(value: &str) -> std::result::Result<Vec<PathItem>, String> {
 }
 
 fn bake_affine_transform_into_path_items(items: &mut [PathItem], transform: &str) -> bool {
-    if items
-        .iter()
-        .any(|item| matches!(item.command, 'A' | 'a'))
-    {
+    if items.iter().any(|item| matches!(item.command, 'A' | 'a')) {
         return false;
     }
 
@@ -2618,7 +2650,10 @@ fn utilize_absolute_path_items(items: &mut [PathItem], params: ConvertPathDataPa
                 let abs_x = cursor_x + item.args[0];
                 let abs_y = cursor_y + item.args[1];
                 let absolute_args = [abs_x, abs_y];
-                if index > 0 && serialized_command_len('L', &absolute_args, params) < serialized_command_len('l', &item.args, params) {
+                if index > 0
+                    && serialized_command_len('L', &absolute_args, params)
+                        < serialized_command_len('l', &item.args, params)
+                {
                     item.command = 'L';
                     item.args[0] = abs_x;
                     item.args[1] = abs_y;
@@ -2738,7 +2773,9 @@ fn compact_path_items_for_serialization(
     } else {
         candidate
     };
-    if serialize_path_items_raw(&candidate, params).len() <= serialize_path_items_raw(&default, params).len() {
+    if serialize_path_items_raw(&candidate, params).len()
+        <= serialize_path_items_raw(&default, params).len()
+    {
         candidate
     } else {
         default
@@ -2787,7 +2824,9 @@ fn compact_initial_relative_moveto(items: &[PathItem]) -> Option<Vec<PathItem>> 
     let mut index = 1;
     let mut absorbed = 0;
     while index < items.len() && items[index].command == 'l' && items[index].args.len() == 2 {
-        first_compacted.args.extend(items[index].args.iter().copied());
+        first_compacted
+            .args
+            .extend(items[index].args.iter().copied());
         index += 1;
         absorbed += 1;
     }
@@ -2885,8 +2924,7 @@ fn serialize_path_numbers(
         if negative_extra_space
             && !delimiter.is_empty()
             && (rounded < 0.0
-                || (item.starts_with('.')
-                    && previous.is_some_and(|prev: f64| prev.fract() != 0.0)))
+                || (item.starts_with('.') && previous.is_some_and(|prev: f64| prev.fract() != 0.0)))
         {
             delimiter = "";
         }
@@ -2924,9 +2962,7 @@ fn merge_paths(doc: &mut Document, params: Option<&Value>) {
         .nodes
         .iter()
         .enumerate()
-        .filter_map(|(node_id, node)| {
-            matches!(node.kind, NodeKind::Element(_)).then_some(node_id)
-        })
+        .filter_map(|(node_id, node)| matches!(node.kind, NodeKind::Element(_)).then_some(node_id))
         .collect();
 
     for parent_id in parent_ids {
@@ -3021,9 +3057,16 @@ fn merge_paths_style_deopt(
     cache: &mut HashMap<usize, HashMap<String, String>>,
 ) -> bool {
     let computed_style = compute_static_style(doc, node_id, stylesheet, cache);
-    ["marker-start", "marker-mid", "marker-end", "clip-path", "mask", "mask-image"]
-        .iter()
-        .any(|name| computed_style.contains_key(*name))
+    [
+        "marker-start",
+        "marker-mid",
+        "marker-end",
+        "clip-path",
+        "mask",
+        "mask-image",
+    ]
+    .iter()
+    .any(|name| computed_style.contains_key(*name))
         || ["fill", "filter", "stroke"].iter().any(|name| {
             computed_style
                 .get(*name)
@@ -3162,8 +3205,16 @@ fn path_bounds(items: &[PathItem]) -> Option<PathBounds> {
                 include_point(&mut bounds, cursor_x, cursor_y);
             }
             'c' => {
-                include_point(&mut bounds, cursor_x + item.args[0], cursor_y + item.args[1]);
-                include_point(&mut bounds, cursor_x + item.args[2], cursor_y + item.args[3]);
+                include_point(
+                    &mut bounds,
+                    cursor_x + item.args[0],
+                    cursor_y + item.args[1],
+                );
+                include_point(
+                    &mut bounds,
+                    cursor_x + item.args[2],
+                    cursor_y + item.args[3],
+                );
                 cursor_x += item.args[4];
                 cursor_y += item.args[5];
                 include_point(&mut bounds, cursor_x, cursor_y);
@@ -3175,7 +3226,11 @@ fn path_bounds(items: &[PathItem]) -> Option<PathBounds> {
                 include_point(&mut bounds, cursor_x, cursor_y);
             }
             's' | 'q' => {
-                include_point(&mut bounds, cursor_x + item.args[0], cursor_y + item.args[1]);
+                include_point(
+                    &mut bounds,
+                    cursor_x + item.args[0],
+                    cursor_y + item.args[1],
+                );
                 cursor_x += item.args[2];
                 cursor_y += item.args[3];
                 include_point(&mut bounds, cursor_x, cursor_y);
@@ -3281,7 +3336,9 @@ fn remove_unknowns_and_defaults(doc: &mut Document, params: Option<&Value>) {
             continue;
         }
 
-        if params.unknown_content && should_remove_unknown_child(doc, parent_id, element_name.as_str()) {
+        if params.unknown_content
+            && should_remove_unknown_child(doc, parent_id, element_name.as_str())
+        {
             detach_node(doc, node_id);
             continue;
         }
@@ -3422,7 +3479,9 @@ fn remove_hidden_elems(doc: &mut Document, params: Option<&Value>) {
         };
 
         if params.opacity0
-            && computed_style.get("opacity").is_some_and(|value| value == "0")
+            && computed_style
+                .get("opacity")
+                .is_some_and(|value| value == "0")
         {
             if element_name == "path" {
                 delayed_non_rendering.push(node_id);
@@ -3597,7 +3656,9 @@ fn merge_styles(doc: &mut Document) {
         if let Some(media) = media {
             collected_styles.push_str(format!("@media {media}{{{css}}}").as_str());
             if let NodeKind::Element(element) = &mut doc.node_mut(node_id).kind {
-                element.attributes.retain(|attribute| attribute.name != "media");
+                element
+                    .attributes
+                    .retain(|attribute| attribute.name != "media");
             }
         } else {
             collected_styles.push_str(css.as_str());
@@ -3605,7 +3666,12 @@ fn merge_styles(doc: &mut Document) {
 
         if let Some(first_id) = first_style_id {
             detach_node(doc, node_id);
-            replace_children_with_style_content(doc, first_id, collected_styles.as_str(), content_kind);
+            replace_children_with_style_content(
+                doc,
+                first_id,
+                collected_styles.as_str(),
+                content_kind,
+            );
         } else {
             first_style_id = Some(node_id);
         }
@@ -3668,9 +3734,11 @@ fn inline_styles(doc: &mut Document, params: Option<&Value>) {
             StyleContentKind::Text
         };
         for (rule_index, rule) in rules.iter().enumerate() {
-            if rule.media_query.as_deref().is_some_and(|query| {
-                !params.use_mqs.iter().any(|allowed| allowed == query)
-            }) {
+            if rule
+                .media_query
+                .as_deref()
+                .is_some_and(|query| !params.use_mqs.iter().any(|allowed| allowed == query))
+            {
                 continue;
             }
             for selector in &rule.selectors {
@@ -3713,12 +3781,7 @@ fn inline_styles(doc: &mut Document, params: Option<&Value>) {
                 .unwrap_or_default();
             let remaining_selectors = collect_remaining_selectors(&stylesheets);
             for node_id in &matched_elements {
-                inline_rule_declarations(
-                    doc,
-                    *node_id,
-                    &declarations,
-                    &remaining_selectors,
-                );
+                inline_rule_declarations(doc, *node_id, &declarations, &remaining_selectors);
             }
         }
         if params.remove_matched_selectors
@@ -3833,7 +3896,9 @@ fn minify_styles(doc: &mut Document, _params: Option<&Value>) {
         };
         let value = serialize_minified_style_declarations(&declarations);
         if value.is_empty() {
-            element.attributes.retain(|attribute| attribute.name != "style");
+            element
+                .attributes
+                .retain(|attribute| attribute.name != "style");
         } else {
             set_or_push_attribute(
                 &mut element.attributes,
@@ -3858,7 +3923,8 @@ fn json_string_array(params: Option<&Value>, name: &str, defaults: &[&str]) -> V
         .and_then(|value| value.get(name))
         .and_then(Value::as_array)
         .map(|items| {
-            items.iter()
+            items
+                .iter()
                 .filter_map(Value::as_str)
                 .map(str::to_string)
                 .collect::<Vec<_>>()
@@ -3896,9 +3962,9 @@ fn inline_rule_declarations(
     let mut prepended = Vec::new();
     for declaration in declarations.iter().rev() {
         if is_presentation_attr(declaration.name.as_str())
-            && !remaining_selectors.iter().any(|selector| {
-                selector.contains(format!("[{}", declaration.name).as_str())
-            })
+            && !remaining_selectors
+                .iter()
+                .any(|selector| selector.contains(format!("[{}", declaration.name).as_str()))
         {
             element
                 .attributes
@@ -4006,7 +4072,9 @@ fn cleanup_inlined_selector_attrs(
                 })
         });
         if class_list.is_empty() {
-            element.attributes.retain(|attribute| attribute.name != "class");
+            element
+                .attributes
+                .retain(|attribute| attribute.name != "class");
         } else {
             set_or_push_attribute(
                 &mut element.attributes,
@@ -4018,7 +4086,8 @@ fn cleanup_inlined_selector_attrs(
     }
 
     if !selector_ids.is_empty() {
-        let Some(id_value) = attribute_value(element.attributes.as_slice(), "id").map(str::to_string)
+        let Some(id_value) =
+            attribute_value(element.attributes.as_slice(), "id").map(str::to_string)
         else {
             return;
         };
@@ -4027,7 +4096,9 @@ fn cleanup_inlined_selector_attrs(
                 selector.contains(format!("#{id_value}").as_str()) || selector.contains("[id")
             })
         {
-            element.attributes.retain(|attribute| attribute.name != "id");
+            element
+                .attributes
+                .retain(|attribute| attribute.name != "id");
         }
     }
 }
@@ -5589,11 +5660,17 @@ fn is_presentation_attr(name: &str) -> bool {
 }
 
 fn is_core_attr(name: &str) -> bool {
-    matches!(name, "id" | "tabindex" | "xml:base" | "xml:lang" | "xml:space")
+    matches!(
+        name,
+        "id" | "tabindex" | "xml:base" | "xml:lang" | "xml:space"
+    )
 }
 
 fn is_conditional_processing_attr(name: &str) -> bool {
-    matches!(name, "requiredExtensions" | "requiredFeatures" | "systemLanguage")
+    matches!(
+        name,
+        "requiredExtensions" | "requiredFeatures" | "systemLanguage"
+    )
 }
 
 fn is_animation_addition_attr(name: &str) -> bool {
@@ -5783,8 +5860,7 @@ fn is_non_inheritable_group_presentation_attr(name: &str) -> bool {
 fn is_known_svg_element(name: &str) -> bool {
     matches!(
         name,
-        "a"
-            | "altGlyph"
+        "a" | "altGlyph"
             | "altGlyphDef"
             | "altGlyphItem"
             | "animate"
@@ -6121,7 +6197,10 @@ fn attribute_allowed_on_element(element_name: &str, attr_name: &str) -> bool {
                 | "zoomAndPan"
         ),
         "g" | "defs" | "symbol" => {
-            matches!(attr_name, "class" | "externalResourcesRequired" | "style" | "transform")
+            matches!(
+                attr_name,
+                "class" | "externalResourcesRequired" | "style" | "transform"
+            )
         }
         "rect" => matches!(
             attr_name,
@@ -6241,14 +6320,7 @@ fn attribute_allowed_on_element(element_name: &str, attr_name: &str) -> bool {
         ),
         "mask" => matches!(
             attr_name,
-            "class"
-                | "height"
-                | "maskContentUnits"
-                | "maskUnits"
-                | "style"
-                | "width"
-                | "x"
-                | "y"
+            "class" | "height" | "maskContentUnits" | "maskUnits" | "style" | "width" | "x" | "y"
         ),
         "pattern" => matches!(
             attr_name,
@@ -6526,18 +6598,8 @@ const GENERATED_ID_CHARS: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQR
 
 fn cleanup_ids(doc: &mut Document, params: Option<&Value>) {
     let params = cleanup_ids_params(params);
-    if !params.force {
-        if document_has_style_or_scripts(doc) {
-            return;
-        }
-        let root_children: Vec<_> = doc.children(doc.root_id()).collect();
-        if !root_children.is_empty()
-            && root_children
-                .iter()
-                .all(|child_id| node_element_name(doc, *child_id) == Some("defs"))
-        {
-            return;
-        }
+    if !params.force && cleanup_ids_blocked(doc) {
+        return;
     }
 
     let mut node_by_id = HashMap::<String, usize>::new();
@@ -6572,7 +6634,9 @@ fn cleanup_ids(doc: &mut Document, params: Option<&Value>) {
         let NodeKind::Element(element) = &mut doc.node_mut(node_id).kind else {
             continue;
         };
-        element.attributes.retain(|attribute| attribute.name != "id");
+        element
+            .attributes
+            .retain(|attribute| attribute.name != "id");
     }
 
     let mut current_id = None;
@@ -6627,9 +6691,22 @@ fn cleanup_ids(doc: &mut Document, params: Option<&Value>) {
             let NodeKind::Element(element) = &mut doc.node_mut(node_id).kind else {
                 continue;
             };
-            element.attributes.retain(|attribute| attribute.name != "id");
+            element
+                .attributes
+                .retain(|attribute| attribute.name != "id");
         }
     }
+}
+
+fn cleanup_ids_blocked(doc: &Document) -> bool {
+    if document_has_style_or_scripts(doc) {
+        return true;
+    }
+    let root_children: Vec<_> = doc.children(doc.root_id()).collect();
+    !root_children.is_empty()
+        && root_children
+            .iter()
+            .all(|child_id| node_element_name(doc, *child_id) == Some("defs"))
 }
 
 fn cleanup_ids_params(params: Option<&Value>) -> CleanupIdsParams {
@@ -6658,7 +6735,10 @@ fn json_string_or_array(value: &Value) -> Vec<String> {
             .map(str::to_string)
             .collect();
     }
-    value.as_str().map(|item| vec![item.to_string()]).unwrap_or_default()
+    value
+        .as_str()
+        .map(|item| vec![item.to_string()])
+        .unwrap_or_default()
 }
 
 fn cleanup_ids_preserved(params: &CleanupIdsParams, id: &str) -> bool {
@@ -6751,13 +6831,20 @@ fn rewrite_reference_attribute(
     let NodeKind::Element(element) = &mut doc.node_mut(node_id).kind else {
         return;
     };
-    let Some(attribute) = attribute_named_mut(element.attributes.as_mut_slice(), attribute_name) else {
+    let Some(attribute) = attribute_named_mut(element.attributes.as_mut_slice(), attribute_name)
+    else {
         return;
     };
-    attribute.value = rewrite_reference_value(attribute.value.as_str(), attribute_name, old_id, new_id);
+    attribute.value =
+        rewrite_reference_value(attribute.value.as_str(), attribute_name, old_id, new_id);
 }
 
-fn rewrite_reference_value(value: &str, attribute_name: &str, old_id: &str, new_id: &str) -> String {
+fn rewrite_reference_value(
+    value: &str,
+    attribute_name: &str,
+    old_id: &str,
+    new_id: &str,
+) -> String {
     let mut rewritten = value.replace(format!("#{old_id}").as_str(), format!("#{new_id}").as_str());
     if attribute_name == "begin" && !rewritten.contains('#') {
         rewritten = rewrite_begin_reference_value(rewritten.as_str(), old_id, new_id);

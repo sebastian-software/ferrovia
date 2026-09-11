@@ -42,7 +42,11 @@ pub(crate) enum XmlTokenSummary {
 
 pub(crate) fn summarize(input: &str) -> std::result::Result<Vec<XmlTokenSummary>, String> {
     Tokenizer::from(input)
-        .map(|token| token.map(summarize_token).map_err(|error| error.to_string()))
+        .map(|token| {
+            token
+                .map(summarize_token)
+                .map_err(|error| error.to_string())
+        })
         .collect()
 }
 
@@ -126,13 +130,33 @@ mod tests {
                 standalone: None
             } if version == "1.0" && encoding.as_deref() == Some("UTF-8")
         ));
-        assert!(tokens.iter().any(|token| matches!(token, XmlTokenSummary::Comment(text) if text == "note")));
+        assert!(
+            tokens
+                .iter()
+                .any(|token| matches!(token, XmlTokenSummary::Comment(text) if text == "note"))
+        );
         assert!(tokens.iter().any(|token| matches!(token, XmlTokenSummary::ProcessingInstruction { target, content } if target == "proc" && content.as_deref() == Some("keep"))));
-        assert!(tokens.iter().any(|token| matches!(token, XmlTokenSummary::DoctypeStart { name } if name == "svg")));
-        assert!(tokens.iter().any(|token| matches!(token, XmlTokenSummary::Cdata(text) if text == "a<b")));
-        assert!(tokens.iter().any(|token| matches!(token, XmlTokenSummary::ElementStart { name } if name == "svg")));
+        assert!(
+            tokens.iter().any(
+                |token| matches!(token, XmlTokenSummary::DoctypeStart { name } if name == "svg")
+            )
+        );
+        assert!(
+            tokens
+                .iter()
+                .any(|token| matches!(token, XmlTokenSummary::Cdata(text) if text == "a<b"))
+        );
+        assert!(
+            tokens.iter().any(
+                |token| matches!(token, XmlTokenSummary::ElementStart { name } if name == "svg")
+            )
+        );
         assert!(tokens.iter().any(|token| matches!(token, XmlTokenSummary::Attribute { name, value } if name == "id" && value == "hero")));
-        assert!(tokens.iter().any(|token| matches!(token, XmlTokenSummary::ElementEmpty)));
+        assert!(
+            tokens
+                .iter()
+                .any(|token| matches!(token, XmlTokenSummary::ElementEmpty))
+        );
     }
 
     #[test]
