@@ -28,8 +28,8 @@ See [the contributor guide](../readme-theme.md) for commands.
 
 ## Repository standards
 
-Standards 0.11.0 owns the shared repository configuration. Run
-`pnpm --config.minimum-release-age=0 dlx @sebastian-software/standards@0.11.0 apply`
+Standards 0.11.1 owns the shared repository configuration. Run
+`pnpm --config.minimum-release-age=0 dlx @sebastian-software/standards@0.11.1 apply`
 to update managed files and `check` to detect drift. The standards CI job also
 checks Rust formatting and Clippy; the existing regression workflow remains.
 README ownership is delegated to mdtheme before applying the configuration.
