@@ -8,7 +8,7 @@ authors.workspace = true
 description = "Command-line interface for the ferrovia SVGO-compatible Rust port"
 
 [dependencies]
-ferrovia-core = { path = "../ferrovia-core" }
+ferrovia-core = { version = "0.1.0", path = "../ferrovia-core" }
 serde_json.workspace = true
 
 [lints]

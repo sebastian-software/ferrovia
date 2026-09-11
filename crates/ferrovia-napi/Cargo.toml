@@ -11,7 +11,7 @@ description = "N-API bindings for the ferrovia SVGO-compatible Rust port"
 crate-type = ["cdylib"]
 
 [dependencies]
-ferrovia-core = { path = "../ferrovia-core" }
+ferrovia-core = { version = "0.1.0", path = "../ferrovia-core" }
 napi.workspace = true
 napi-derive.workspace = true
 serde_json.workspace = true
