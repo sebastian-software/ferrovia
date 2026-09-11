@@ -28,8 +28,16 @@ See [the contributor guide](../readme-theme.md) for commands.
 
 ## Repository standards
 
-Standards 0.11.0 owns the shared repository configuration. Run
-`pnpm --config.minimum-release-age=0 dlx @sebastian-software/standards@0.11.0 apply`
+Standards 0.11.1 owns the shared repository configuration. Run
+`pnpm --config.minimum-release-age=0 dlx @sebastian-software/standards@0.11.1 apply`
 to update managed files and `check` to detect drift. The standards CI job also
 checks Rust formatting and Clippy; the existing regression workflow remains.
 README ownership is delegated to mdtheme before applying the configuration.
+
+## Theme badge placement
+
+The project pins mdtheme 0.4.0 and uses one `mdtheme:badges:start` /
+`mdtheme:badges:end` comment pair in `README.md.src`. Sebastian's
+`badges-prepend.md` places its badge before the authored project badges.
+Ferramenta's header and footer stay unchanged. Upgrade the CLI and lockfile
+before adopting this theme revision. Keep badge markup outside raw HTML blocks.
