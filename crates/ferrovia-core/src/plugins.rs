@@ -6598,18 +6598,8 @@ const GENERATED_ID_CHARS: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQR
 
 fn cleanup_ids(doc: &mut Document, params: Option<&Value>) {
     let params = cleanup_ids_params(params);
-    if !params.force {
-        if document_has_style_or_scripts(doc) {
-            return;
-        }
-        let root_children: Vec<_> = doc.children(doc.root_id()).collect();
-        if !root_children.is_empty()
-            && root_children
-                .iter()
-                .all(|child_id| node_element_name(doc, *child_id) == Some("defs"))
-        {
-            return;
-        }
+    if !params.force && cleanup_ids_blocked(doc) {
+        return;
     }
 
     let mut node_by_id = HashMap::<String, usize>::new();
@@ -6706,6 +6696,17 @@ fn cleanup_ids(doc: &mut Document, params: Option<&Value>) {
                 .retain(|attribute| attribute.name != "id");
         }
     }
+}
+
+fn cleanup_ids_blocked(doc: &Document) -> bool {
+    if document_has_style_or_scripts(doc) {
+        return true;
+    }
+    let root_children: Vec<_> = doc.children(doc.root_id()).collect();
+    !root_children.is_empty()
+        && root_children
+            .iter()
+            .all(|child_id| node_element_name(doc, *child_id) == Some("defs"))
 }
 
 fn cleanup_ids_params(params: Option<&Value>) -> CleanupIdsParams {

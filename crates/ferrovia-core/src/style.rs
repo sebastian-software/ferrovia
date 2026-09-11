@@ -332,7 +332,7 @@ fn parse_css_rules_in_media(css: &str, media_query: &str) -> Vec<CssRule> {
         .collect()
 }
 
-fn skip_css_whitespace(css: &str, index: &mut usize) {
+const fn skip_css_whitespace(css: &str, index: &mut usize) {
     while *index < css.len() && css.as_bytes()[*index].is_ascii_whitespace() {
         *index += 1;
     }
