@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "blocking": false,
+  "reason": "The configured agent check is not defined, and the local CI-equivalent regression script could not run because this automation environment does not provide cargo.",
+  "detectedAt": "2026-09-14T11:48:38.000Z",
+  "expectedStandardsVersion": 14,
+  "observedStandardsVersion": 14,
+  "expectedCliVersion": "0.12.0",
+  "observedCliVersion": "0.12.0",
+  "failedChecks": [
+    "CI=true pnpm agent:check",
+    "CI=true bash ./scripts/check-regressions.sh"
+  ],
+  "retry": "Run the pull request CI or rerun the regression gate in an environment with the repository's Rust toolchain and remove this file when validation passes."
+}
